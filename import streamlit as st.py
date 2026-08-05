@@ -79,7 +79,7 @@ def get_youtube_playlist(api_key, url):
             videos.append({
                 "曲名": title,
                 "概要欄データ": snippet.get("description", ""),
-                "URL": f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){snippet['resourceId']['videoId']}"
+                "URL": f"https://www.youtube.com/watch?v={snippet['resourceId']['videoId']}"
             })
             
         next_page_token = response.get("nextPageToken")
@@ -93,7 +93,7 @@ def get_niconico_playlist(url):
         raise ValueError("有効なニコニコ動画のマイリストURLが見つかりません。")
         
     mylist_id = match.group(1)
-    api_url = f"[https://nvapi.nicovideo.jp/v2/mylists/](https://nvapi.nicovideo.jp/v2/mylists/){mylist_id}"
+    api_url = f"https://nvapi.nicovideo.jp/v2/mylists/{mylist_id}"
     
     headers = {
         "X-Frontend-Id": "6",
@@ -101,6 +101,8 @@ def get_niconico_playlist(url):
     }
     
     res = requests.get(api_url, headers=headers)
+    res.encoding = 'utf-8' # ★文字化け対策として強制指定
+    
     if res.status_code != 200:
         raise ValueError(f"ニコニコ動画のリストが読み込めませんでした (Status: {res.status_code})。")
         
@@ -119,13 +121,15 @@ def get_niconico_playlist(url):
         videos.append({
             "曲名": video.get("title", "Unknown"),
             "概要欄データ": video.get("shortDescription", ""),
-            "URL": f"[https://www.nicovideo.jp/watch/](https://www.nicovideo.jp/watch/){video.get('id', '')}"
+            "URL": f"https://www.nicovideo.jp/watch/{video.get('id', '')}"
         })
     return videos
 
 def get_soundcloud_data(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     res = requests.get(url, headers=headers)
+    res.encoding = 'utf-8' # ★文字化け対策として強制指定
+    
     if res.status_code != 200:
         raise ValueError(f"SoundCloudのページ取得に失敗しました (Status: {res.status_code})")
         
