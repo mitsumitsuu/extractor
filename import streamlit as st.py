@@ -55,20 +55,22 @@ def extract_vocals(title, description, keywords, ng_list):
     return " / ".join(list(found_vocals))
 
 def clean_title(raw_title):
-    """不要な情報（ローマ字、〇〇P、feat.など）を削ぎ落として曲名だけにする"""
+    """不要な情報（Remix表記、〇〇P、feat.など）を削ぎ落として曲名だけにする"""
     title = str(raw_title)
     
-    # 1. 【】や[]で囲まれた装飾文字を削除
+    # 1. Remix, Bootleg, Edit, VIP, Mashup, Cover などが含まれる全角・半角括弧を削除
+    title = re.sub(r"(?i)[\(（\[【].*?(remix|bootleg|edit|mashup|flip|vip|cover).*?[\)）\]】]", "", title)
+    
+    # 2. 【】や[]で囲まれた装飾文字を削除
     title = re.sub(r"【.*?】|\[.*?\]", "", title)
     
-    # 2. feat. や ft. 以降の文字をすべて削除（大文字小文字を問わない）
+    # 3. feat. や ft. 以降の文字をすべて削除（大文字小文字を問わない）
     title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
     
-    # 3. " / " や " - " で分割し、一番最初の部分（メインの曲名）だけを取得
-    # ※意図しない分割を防ぐため、記号の前後にあるスペースも含めて条件にしています
+    # 4. " / " や " - " で分割し、一番最初の部分（メインの曲名）だけを取得
     title = re.split(r"\s+/\s+|\s+-\s+", title)[0]
     
-    # 4. 前後に残った不要なスペースを消して返す
+    # 5. 前後に残った不要なスペースを消して返す
     return title.strip()
 
 def get_youtube_playlist(api_key, url):
@@ -222,10 +224,8 @@ if st.button("抽出を開始する", type="primary"):
 
                 results = []
                 for item in raw_data:
-                    # ★ここで「元のタイトル」を使ってボーカル抽出を行う（抽出精度に影響なし）
                     vocals = extract_vocals(item["曲名"], item["概要欄データ"], target_keywords, ng_words)
                     
-                    # ★抽出が終わってから、出力用にタイトルを綺麗にカットする
                     cleaned_title = clean_title(item["曲名"])
                     
                     results.append({
