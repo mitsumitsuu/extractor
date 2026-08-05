@@ -3,9 +3,10 @@ import pandas as pd
 import re
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import spotipy
-from spotipy.oauth2 import SpotifyClientCredentials
 import feedparser
+import requests
+from bs4 import BeautifulSoup
+import json
 from io import BytesIO
 
 # ==========================================
@@ -25,8 +26,7 @@ with st.sidebar:
     
     st.subheader("🔑 APIキー設定")
     youtube_api_key = st.text_input("YouTube API Key", type="password")
-    spotify_client_id = st.text_input("Spotify Client ID", type="password")
-    spotify_client_secret = st.text_input("Spotify Client Secret", type="password")
+    # ※Spotifyの認証キー入力欄は不要になったため削除
     
     st.subheader("🔍 抽出するワード")
     keywords_input = st.text_area("合成音声名（カンマ区切り）", DEFAULT_KEYWORDS, height=100)
@@ -40,20 +40,16 @@ with st.sidebar:
 # 3. データ処理ロジック（関数）
 # ==========================================
 def extract_vocals(title, description, keywords, ng_list):
-    """タイトルと概要欄から特定のワードを抽出する（ノイズ対策版）"""
     found_vocals = set()
     title_str = str(title) if title else ""
     desc_str = str(description) if description else ""
     
-    # 1. タイトルからは無条件で抽出
     for kw in keywords:
         if kw in title_str:
             found_vocals.add(kw)
             
-    # 2. 概要欄のチェック（NGワード判定）
     has_ng_word = any(ng in desc_str for ng in ng_list)
     
-    # NGワードがなければ、概要欄からも抽出
     if not has_ng_word:
         for kw in keywords:
             if kw in desc_str:
@@ -62,7 +58,6 @@ def extract_vocals(title, description, keywords, ng_list):
     return " / ".join(list(found_vocals))
 
 def get_youtube_playlist(api_key, url):
-    """YouTubeのデータを取得"""
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
     if not match:
         raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
@@ -96,39 +91,7 @@ def get_youtube_playlist(api_key, url):
             break
     return videos
 
-def get_spotify_playlist(client_id, client_secret, url):
-    """Spotifyのデータを取得"""
-    match = re.search(r"playlist/([a-zA-Z0-9]+)", url)
-    if not match:
-        raise ValueError("有効なSpotifyプレイリストIDが見つかりません。")
-        
-    auth_manager = SpotifyClientCredentials(client_id=client_id, client_secret=client_secret)
-    sp = spotipy.Spotify(auth_manager=auth_manager)
-    
-    results = sp.playlist_tracks(match.group(1))
-    tracks = results['items']
-    
-    while results['next']:
-        results = sp.next(results)
-        tracks.extend(results['items'])
-        
-    videos = []
-    for item in tracks:
-        track = item.get('track')
-        if not track:
-            continue
-        # Spotifyの概要欄代わりとしてアーティスト名を結合
-        artists = ", ".join([artist['name'] for artist in track['artists']])
-        videos.append({
-            "曲名": track['name'],
-            "概要欄データ": artists,
-            "URL": track['external_urls'].get('spotify', '')
-        })
-    return videos
-
 def get_niconico_playlist(url):
-    """ニコニコ動画のデータを取得（RSSフィード利用）"""
-    # RSS用のURLに変換
     if "?rss=2.0" not in url:
         rss_url = url.split("?")[0] + "?rss=2.0"
     else:
@@ -147,6 +110,55 @@ def get_niconico_playlist(url):
         })
     return videos
 
+def get_spotify_playlist(url):
+    """Spotifyの公開ページからスクレイピングでデータを取得"""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
+    }
+    res = requests.get(url, headers=headers)
+    if res.status_code != 200:
+        raise ValueError(f"Spotifyページの取得に失敗しました (Status: {res.status_code})")
+        
+    soup = BeautifulSoup(res.text, "html.parser")
+    videos = []
+    
+    # 検索エンジン用に埋め込まれた構造化データ（JSON-LD）を解析
+    json_ld_tags = soup.find_all('script', type='application/ld+json')
+    for tag in json_ld_tags:
+        try:
+            data = json.loads(tag.string)
+            if isinstance(data, dict) and data.get('@type') == 'MusicPlaylist':
+                tracks = data.get('track', [])
+                # データ構造がItemListElementの場合の対応
+                if isinstance(tracks, dict) and 'itemListElement' in tracks:
+                    tracks = tracks['itemListElement']
+                    
+                for t in tracks:
+                    item = t.get('item', t) if isinstance(t, dict) else {}
+                    if item.get('@type') == 'MusicRecording':
+                        name = item.get('name', 'Unknown')
+                        url = item.get('url', '')
+                        
+                        # アーティスト名を概要欄代わりとして結合
+                        artists_data = item.get('byArtist', [])
+                        if not isinstance(artists_data, list):
+                            artists_data = [artists_data]
+                        artists = ", ".join([a.get('name', '') for a in artists_data if isinstance(a, dict)])
+                        
+                        videos.append({
+                            "曲名": name,
+                            "概要欄データ": artists,
+                            "URL": url
+                        })
+                
+                if videos:
+                    return videos # 無事にデータが取れたら終了
+        except Exception:
+            continue
+            
+    raise ValueError("Spotifyのページから楽曲データを見つけられませんでした。非公開リストであるか、仕様変更の可能性があります。")
+
 # ==========================================
 # 4. メイン画面（実行UI）
 # ==========================================
@@ -159,18 +171,13 @@ if st.button("抽出を開始する", type="primary"):
         with st.spinner("データを取得・解析中..."):
             try:
                 raw_data = []
-                # -------------------------------------
-                # URLによるプラットフォーム自動振り分け
-                # -------------------------------------
                 if "youtube.com" in playlist_url or "youtu.be" in playlist_url:
                     if not youtube_api_key:
                         raise ValueError("YouTube API Keyが設定されていません。")
                     raw_data = get_youtube_playlist(youtube_api_key, playlist_url)
                     
                 elif "spotify.com" in playlist_url:
-                    if not spotify_client_id or not spotify_client_secret:
-                        raise ValueError("SpotifyのClient IDとClient Secretが設定されていません。")
-                    raw_data = get_spotify_playlist(spotify_client_id, spotify_client_secret, playlist_url)
+                    raw_data = get_spotify_playlist(playlist_url)
                     
                 elif "nicovideo.jp" in playlist_url:
                     raw_data = get_niconico_playlist(playlist_url)
@@ -178,9 +185,6 @@ if st.button("抽出を開始する", type="primary"):
                 else:
                     raise ValueError("対応していないURLです。YouTube、Spotify、ニコニコ動画のリストを入力してください。")
 
-                # -------------------------------------
-                # データの共通処理とExcel出力
-                # -------------------------------------
                 results = []
                 for item in raw_data:
                     vocals = extract_vocals(item["曲名"], item["概要欄データ"], target_keywords, ng_words)
@@ -192,19 +196,22 @@ if st.button("抽出を開始する", type="primary"):
                 
                 df = pd.DataFrame(results)
                 
-                st.success(f"✅ {len(df)}曲の解析が完了しました！")
-                st.dataframe(df, use_container_width=True)
-                
-                output = BytesIO()
-                with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                    df.to_excel(writer, index=False, sheet_name='Playlist Data')
-                
-                st.download_button(
-                    label="📥 Excelファイル（.xlsx）としてダウンロード",
-                    data=output.getvalue(),
-                    file_name="playlist_result.xlsx",
-                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                )
+                if df.empty:
+                    st.warning("データの取得は成功しましたが、曲が見つかりませんでした。")
+                else:
+                    st.success(f"✅ {len(df)}曲の解析が完了しました！")
+                    st.dataframe(df, use_container_width=True)
+                    
+                    output = BytesIO()
+                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                        df.to_excel(writer, index=False, sheet_name='Playlist Data')
+                    
+                    st.download_button(
+                        label="📥 Excelファイル（.xlsx）としてダウンロード",
+                        data=output.getvalue(),
+                        file_name="playlist_result.xlsx",
+                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    )
                 
             except Exception as e:
                 st.error(f"❌ エラーが発生しました: {e}")
