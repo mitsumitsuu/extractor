@@ -2,5 +2,5 @@ streamlit
 pandas
 google-api-python-client
 xlsxwriter
-feedparser
+requests
 starlette<0.38.0
