@@ -4,9 +4,6 @@ import re
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 import feedparser
-import requests
-from bs4 import BeautifulSoup
-import json
 from io import BytesIO
 
 # ==========================================
@@ -15,8 +12,8 @@ from io import BytesIO
 DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
 
-st.set_page_config(page_title="プレイリスト解析ツール", layout="wide")
-st.title("🎶 楽曲情報・合成音声名 抽出システム")
+st.set_page_config(page_title="楽曲情報抽出システム", layout="wide")
+st.title("🎶 YouTube & ニコニコ動画 楽曲抽出システム")
 
 # ==========================================
 # 2. サイドバー（設定画面）
@@ -26,7 +23,6 @@ with st.sidebar:
     
     st.subheader("🔑 APIキー設定")
     youtube_api_key = st.text_input("YouTube API Key", type="password")
-    # ※Spotifyの認証キー入力欄は不要になったため削除
     
     st.subheader("🔍 抽出するワード")
     keywords_input = st.text_area("合成音声名（カンマ区切り）", DEFAULT_KEYWORDS, height=100)
@@ -110,59 +106,10 @@ def get_niconico_playlist(url):
         })
     return videos
 
-def get_spotify_playlist(url):
-    """Spotifyの公開ページからスクレイピングでデータを取得"""
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-        "Accept-Language": "ja,en-US;q=0.9,en;q=0.8"
-    }
-    res = requests.get(url, headers=headers)
-    if res.status_code != 200:
-        raise ValueError(f"Spotifyページの取得に失敗しました (Status: {res.status_code})")
-        
-    soup = BeautifulSoup(res.text, "html.parser")
-    videos = []
-    
-    # 検索エンジン用に埋め込まれた構造化データ（JSON-LD）を解析
-    json_ld_tags = soup.find_all('script', type='application/ld+json')
-    for tag in json_ld_tags:
-        try:
-            data = json.loads(tag.string)
-            if isinstance(data, dict) and data.get('@type') == 'MusicPlaylist':
-                tracks = data.get('track', [])
-                # データ構造がItemListElementの場合の対応
-                if isinstance(tracks, dict) and 'itemListElement' in tracks:
-                    tracks = tracks['itemListElement']
-                    
-                for t in tracks:
-                    item = t.get('item', t) if isinstance(t, dict) else {}
-                    if item.get('@type') == 'MusicRecording':
-                        name = item.get('name', 'Unknown')
-                        url = item.get('url', '')
-                        
-                        # アーティスト名を概要欄代わりとして結合
-                        artists_data = item.get('byArtist', [])
-                        if not isinstance(artists_data, list):
-                            artists_data = [artists_data]
-                        artists = ", ".join([a.get('name', '') for a in artists_data if isinstance(a, dict)])
-                        
-                        videos.append({
-                            "曲名": name,
-                            "概要欄データ": artists,
-                            "URL": url
-                        })
-                
-                if videos:
-                    return videos # 無事にデータが取れたら終了
-        except Exception:
-            continue
-            
-    raise ValueError("Spotifyのページから楽曲データを見つけられませんでした。非公開リストであるか、仕様変更の可能性があります。")
-
 # ==========================================
 # 4. メイン画面（実行UI）
 # ==========================================
-playlist_url = st.text_input("再生リストのURLを入力（YouTube / Spotify / ニコニコ動画）")
+playlist_url = st.text_input("再生リストのURLを入力（YouTube または ニコニコ動画）")
 
 if st.button("抽出を開始する", type="primary"):
     if not playlist_url:
@@ -176,14 +123,11 @@ if st.button("抽出を開始する", type="primary"):
                         raise ValueError("YouTube API Keyが設定されていません。")
                     raw_data = get_youtube_playlist(youtube_api_key, playlist_url)
                     
-                elif "spotify.com" in playlist_url:
-                    raw_data = get_spotify_playlist(playlist_url)
-                    
                 elif "nicovideo.jp" in playlist_url:
                     raw_data = get_niconico_playlist(playlist_url)
                     
                 else:
-                    raise ValueError("対応していないURLです。YouTube、Spotify、ニコニコ動画のリストを入力してください。")
+                    raise ValueError("対応していないURLです。YouTube、またはニコニコ動画のマイリストURLを入力してください。")
 
                 results = []
                 for item in raw_data:
