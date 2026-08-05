@@ -2,6 +2,7 @@ streamlit
 pandas
 google-api-python-client
 xlsxwriter
-spotipy
 feedparser
+requests
+beautifulsoup4
 starlette<0.38.0
