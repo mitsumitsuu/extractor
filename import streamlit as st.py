@@ -1,9 +1,9 @@
 import streamlit as st
 import pandas as pd
 import re
+import requests
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
-import feedparser
 from io import BytesIO
 
 # ==========================================
@@ -78,7 +78,7 @@ def get_youtube_playlist(api_key, url):
                 continue
             videos.append({
                 "曲名": title,
-                "概要欄データ": snippet["description"],
+                "概要欄データ": snippet.get("description", ""),
                 "URL": f"https://www.youtube.com/watch?v={snippet['resourceId']['videoId']}"
             })
             
@@ -88,21 +88,40 @@ def get_youtube_playlist(api_key, url):
     return videos
 
 def get_niconico_playlist(url):
-    if "?rss=2.0" not in url:
-        rss_url = url.split("?")[0] + "?rss=2.0"
-    else:
-        rss_url = url
+    """ニコニコ動画の内部API(nvapi)を利用してマイリストを取得"""
+    match = re.search(r"mylist/(\d+)", url)
+    if not match:
+        raise ValueError("有効なニコニコ動画のマイリストURLが見つかりません。（例: https://www.nicovideo.jp/mylist/12345678）")
         
-    feed = feedparser.parse(rss_url)
-    if feed.bozo:
-        raise ValueError("ニコニコ動画のリストが読み込めませんでした。非公開設定になっていないか確認してください。")
+    mylist_id = match.group(1)
+    api_url = f"https://nvapi.nicovideo.jp/v2/mylists/{mylist_id}"
+    
+    # ニコニコの内部APIを叩くための必須ヘッダー（偽装）
+    headers = {
+        "X-Frontend-Id": "6",
+        "X-Frontend-Version": "0"
+    }
+    
+    res = requests.get(api_url, headers=headers)
+    if res.status_code != 200:
+        raise ValueError(f"ニコニコ動画のリストが読み込めませんでした (Status: {res.status_code})。URLが間違っているか、非公開設定の可能性があります。")
         
+    data = res.json()
+    if data.get("meta", {}).get("status") != 200:
+        raise ValueError("データの取得に失敗しました。非公開リストの可能性があります。")
+        
+    items = data.get("data", {}).get("mylist", {}).get("items", [])
+    
     videos = []
-    for entry in feed.entries:
+    for item in items:
+        video = item.get("video", {})
+        if not video:
+            continue
+            
         videos.append({
-            "曲名": entry.title,
-            "概要欄データ": entry.get('summary', ''),
-            "URL": entry.link
+            "曲名": video.get("title", "Unknown"),
+            "概要欄データ": video.get("shortDescription", ""),
+            "URL": f"https://www.nicovideo.jp/watch/{video.get('id', '')}"
         })
     return videos
 
@@ -141,7 +160,7 @@ if st.button("抽出を開始する", type="primary"):
                 df = pd.DataFrame(results)
                 
                 if df.empty:
-                    st.warning("データの取得は成功しましたが、曲が見つかりませんでした。")
+                    st.warning("データの取得は成功しましたが、対象となる楽曲が見つかりませんでした。")
                 else:
                     st.success(f"✅ {len(df)}曲の解析が完了しました！")
                     st.dataframe(df, use_container_width=True)
