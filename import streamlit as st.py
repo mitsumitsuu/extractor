@@ -36,6 +36,7 @@ with st.sidebar:
 # 3. データ処理ロジック（関数）
 # ==========================================
 def extract_vocals(title, description, keywords, ng_list):
+    """タイトルと概要欄から特定のワードを抽出する"""
     found_vocals = set()
     title_str = str(title) if title else ""
     desc_str = str(description) if description else ""
@@ -52,6 +53,23 @@ def extract_vocals(title, description, keywords, ng_list):
                 found_vocals.add(kw)
                 
     return " / ".join(list(found_vocals))
+
+def clean_title(raw_title):
+    """不要な情報（ローマ字、〇〇P、feat.など）を削ぎ落として曲名だけにする"""
+    title = str(raw_title)
+    
+    # 1. 【】や[]で囲まれた装飾文字を削除
+    title = re.sub(r"【.*?】|\[.*?\]", "", title)
+    
+    # 2. feat. や ft. 以降の文字をすべて削除（大文字小文字を問わない）
+    title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
+    
+    # 3. " / " や " - " で分割し、一番最初の部分（メインの曲名）だけを取得
+    # ※意図しない分割を防ぐため、記号の前後にあるスペースも含めて条件にしています
+    title = re.split(r"\s+/\s+|\s+-\s+", title)[0]
+    
+    # 4. 前後に残った不要なスペースを消して返す
+    return title.strip()
 
 def get_youtube_playlist(api_key, url):
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
@@ -101,7 +119,7 @@ def get_niconico_playlist(url):
     }
     
     res = requests.get(api_url, headers=headers)
-    res.encoding = 'utf-8' # ★文字化け対策として強制指定
+    res.encoding = 'utf-8'
     
     if res.status_code != 200:
         raise ValueError(f"ニコニコ動画のリストが読み込めませんでした (Status: {res.status_code})。")
@@ -128,12 +146,11 @@ def get_niconico_playlist(url):
 def get_soundcloud_data(url):
     headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
     res = requests.get(url, headers=headers)
-    res.encoding = 'utf-8' # ★文字化け対策として強制指定
+    res.encoding = 'utf-8'
     
     if res.status_code != 200:
         raise ValueError(f"SoundCloudのページ取得に失敗しました (Status: {res.status_code})")
         
-    # SoundCloudのページに埋め込まれた状態データ（JSON）を正規表現で抽出
     match = re.search(r"window\.__sc_hydration = (\[.*?\]);\s*</script>", res.text)
     if not match:
         raise ValueError("楽曲データが見つかりませんでした。非公開設定の可能性があります。")
@@ -146,12 +163,10 @@ def get_soundcloud_data(url):
     videos = []
     
     for item in hydration_data:
-        # プレイリストの場合
         if item.get("hydratable") == "playlist":
             tracks = item.get("data", {}).get("tracks", [])
             for t in tracks:
                 if isinstance(t, dict) and t.get("title"):
-                    # 投稿ユーザー名と説明文を概要欄として扱う
                     user = t.get("user", {}).get("username", "")
                     desc = t.get("description") or ""
                     videos.append({
@@ -162,7 +177,6 @@ def get_soundcloud_data(url):
             if videos:
                 return videos
                 
-        # 単一楽曲の場合
         elif item.get("hydratable") == "sound":
             t = item.get("data", {})
             if isinstance(t, dict) and t.get("title"):
@@ -208,9 +222,14 @@ if st.button("抽出を開始する", type="primary"):
 
                 results = []
                 for item in raw_data:
+                    # ★ここで「元のタイトル」を使ってボーカル抽出を行う（抽出精度に影響なし）
                     vocals = extract_vocals(item["曲名"], item["概要欄データ"], target_keywords, ng_words)
+                    
+                    # ★抽出が終わってから、出力用にタイトルを綺麗にカットする
+                    cleaned_title = clean_title(item["曲名"])
+                    
                     results.append({
-                        "曲名": item["曲名"],
+                        "曲名": cleaned_title,
                         "合成音声": vocals,
                         "URL": item["URL"]
                     })
