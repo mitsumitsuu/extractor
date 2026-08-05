@@ -3,3 +3,4 @@ pandas
 google-api-python-client
 xlsxwriter
 feedparser
+starlette<0.38.0
