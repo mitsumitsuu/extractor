@@ -1,3 +1,4 @@
 streamlit
 pandas
 google-api-python-client
+xlsxwriter
