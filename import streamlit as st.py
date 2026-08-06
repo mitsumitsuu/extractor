@@ -14,25 +14,22 @@ from PIL import Image
 DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
 
-st.set_page_config(page_title="楽曲情報抽出システム", layout="wide")
-st.title("🎶 楽曲抽出＆特定システム")
+st.set_page_config(page_title="楽曲抽出＆特定システム", layout="wide")
 
 # ==========================================
-# 2. サイドバー（設定画面）
+# 2. タイトルと初心者向けガイド
 # ==========================================
-with st.sidebar:
-    st.header("⚙️ システム設定")
-    
-    st.subheader("🔑 APIキー設定")
-    youtube_api_key = st.text_input("YouTube API Key", type="password")
-    
-    st.subheader("🔍 抽出するワード")
-    keywords_input = st.text_area("合成音声名（カンマ区切り）", DEFAULT_KEYWORDS, height=100)
-    target_keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
-    
-    st.subheader("🚫 除外（NG）ワード")
-    ng_words_input = st.text_area("NGワード（概要欄検索をスキップ）", DEFAULT_NG_WORDS, height=100)
-    ng_words = [n.strip() for n in ng_words_input.split(",") if n.strip()]
+st.title("🎶 楽曲抽出＆特定システム")
+
+st.markdown("""
+**はじめての方へ：このツールでできること**
+このシステムは、音楽のプレイリスト整理や、わからない楽曲名の特定を自動化するお助けツールです。
+上から順番に項目を埋めていくだけで、簡単に操作できます。
+
+*   **🔗 URLから一括抽出:** YouTubeやニコニコ動画、SoundCloudのURLを入れるだけで、曲名と歌っているキャラクター（合成音声など）を自動でリストアップし、Excel形式でダウンロードできます。
+*   **🖼️ 画像・ローマ字から楽曲特定:** 「スクショはあるけど曲名が読めない」「ローマ字しかわからない」といった時に、正しい日本語の曲名を探し出します。
+---
+""")
 
 # ==========================================
 # 3. データ処理ロジック（関数群）
@@ -59,7 +56,6 @@ def clean_title(raw_title):
     title = re.split(r"\s+/\s+|\s+-\s+", title)[0]
     return title.strip()
 
-# --- 各プラットフォームのデータ取得ロジック ---
 def get_youtube_playlist(api_key, url):
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
     if not match: raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
@@ -115,45 +111,50 @@ def get_soundcloud_data(url):
             if videos: return videos
     return videos
 
-# --- VocaDB連携＆OCRロジック（新機能） ---
 def search_vocadb(query_text):
-    """VocaDBのAPIを叩いて、ローマ字や不完全な文字列から正式な日本語の楽曲名を探す"""
     url = "https://vocadb.net/api/songs"
-    params = {
-        "query": query_text,
-        "maxResults": 1,
-        "sort": "FavoritedTimes", # 最も人気（お気に入り登録数が多い）の曲を優先してヒットさせる
-        "fields": "Names"
-    }
+    params = {"query": query_text, "maxResults": 1, "sort": "FavoritedTimes", "fields": "Names"}
     headers = {"Accept": "application/json"}
     try:
         response = requests.get(url, params=params, headers=headers)
         if response.status_code == 200:
             data = response.json()
-            if data.get("items"):
-                # VocaDBに登録されているデフォルト名（通常は正式な日本語タイトル）を返す
-                return data["items"][0]["defaultName"]
+            if data.get("items"): return data["items"][0]["defaultName"]
     except Exception as e:
         return f"検索エラー: {e}"
     return None
 
 def extract_text_from_image(image_file):
-    """画像からテキストを抽出（英語・日本語対応）"""
     image = Image.open(image_file)
-    # Tesseractで英語(eng)と日本語(jpn)を認識させる
     text = pytesseract.image_to_string(image, lang='eng+jpn')
     return text.strip()
 
 # ==========================================
-# 4. メイン画面（タブ構造）
+# 4. メイン画面（タブとフラットレイアウト構造）
 # ==========================================
-tab1, tab2 = st.tabs(["🔗 URLから一括抽出 (Playlists)", "🖼️ 画像・ローマ字から楽曲特定 (OCR & VocaDB)"])
+tab1, tab2 = st.tabs(["🔗 URLから一括抽出", "🖼️ 画像・ローマ字から楽曲特定"])
 
 # ------------------------------------------
 # タブ1: 従来のプレイリスト抽出機能
 # ------------------------------------------
 with tab1:
-    st.markdown("### プレイリスト・楽曲URLの解析")
+    st.header("⚙️ 1. システム設定")
+    st.markdown("抽出のベースとなる設定を行います。デフォルトのままでも動作します。")
+    
+    youtube_api_key = st.text_input("🔑 YouTube API Key (※YouTubeの抽出を行う場合のみ入力)", type="password")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        keywords_input = st.text_area("🔍 抽出するワード（カンマ区切り）", DEFAULT_KEYWORDS, height=100)
+        target_keywords = [k.strip() for k in keywords_input.split(",") if k.strip()]
+    with col2:
+        ng_words_input = st.text_area("🚫 除外（NG）ワード（概要欄検索をスキップ）", DEFAULT_NG_WORDS, height=100)
+        ng_words = [n.strip() for n in ng_words_input.split(",") if n.strip()]
+
+    st.markdown("---")
+    
+    st.header("🔍 2. プレイリスト・楽曲URLの解析")
+    st.markdown("解析したい再生リストや動画のURLを貼り付けてください。")
     playlist_url = st.text_input("URLを入力（YouTube / ニコニコ動画 / SoundCloud）")
 
     if st.button("一括抽出を開始する", type="primary"):
@@ -201,31 +202,26 @@ with tab1:
 # タブ2: 画像認識 (OCR) & VocaDB検索
 # ------------------------------------------
 with tab2:
-    st.markdown("### 画像認識・ローマ字から正式な曲名を特定")
-    st.info("スクリーンショットや、ローマ字の楽曲名から、世界最大のボカロデータベース(VocaDB)を検索して正式な日本語タイトルを導き出します。")
+    st.header("🖼️ 画像認識・ローマ字から楽曲特定")
+    st.markdown("スクリーンショットや、ローマ字の楽曲名から、VocaDBを検索して正式な日本語タイトルを導き出します。")
     
     uploaded_file = st.file_uploader("楽曲名が写っている画像（スクショなど）をアップロード", type=["png", "jpg", "jpeg"])
     manual_query = st.text_input("または、検索したい文字列（ローマ字や不完全な曲名）を直接入力", placeholder="例: nousyousakuretuga-ru")
     
-    if st.button("楽曲を特定する", type="primary", key="search_vocadb"):
+    if st.button("楽曲を特定する", type="primary"):
         query_text = ""
         
-        # 1. 画像がアップロードされている場合はOCR処理
         if uploaded_file is not None:
             with st.spinner("画像を解析中..."):
                 st.image(uploaded_file, caption="アップロードされた画像", width=300)
                 extracted_text = extract_text_from_image(uploaded_file)
                 st.write("**画像から抽出されたテキスト:**")
                 st.code(extracted_text)
-                
-                # 抽出したテキストを検索クエリとして使用（改行をスペースに置換）
                 query_text = extracted_text.replace("\n", " ").strip()
         
-        # 2. 手入力がある場合はそちらを優先
         if manual_query:
             query_text = manual_query.strip()
             
-        # 3. VocaDBへの問い合わせ処理
         if query_text:
             with st.spinner("VocaDBデータベースを検索中..."):
                 official_title = search_vocadb(query_text)
