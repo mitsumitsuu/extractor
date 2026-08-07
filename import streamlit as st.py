@@ -22,7 +22,13 @@ st.set_page_config(page_title="楽曲抽出＆特定システム", layout="wide"
 # ==========================================
 # 2. タイトルと初心者向けガイド
 # ==========================================
-st.title("🎶 楽曲抽出＆特定システム")
+col_title, col_link = st.columns([4, 1])
+with col_title:
+    st.title("🎶 楽曲抽出＆特定システム")
+with col_link:
+    st.write("") # スペース調整
+    st.write("")
+    st.markdown("[👤 制作者 (Mitsu) の lit.link](https://lit.link/_mitsu_3_)")
 
 st.markdown("""
 **はじめての方へ：このツールでできること**
@@ -58,7 +64,6 @@ def clean_title(raw_title):
     return title.strip()
 
 def get_youtube_playlist(api_key, url):
-    """APIキーを使用したYouTubeプレイリスト取得（全件高精度）"""
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
     if not match: raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
     youtube = build("youtube", "v3", developerKey=api_key)
@@ -76,16 +81,19 @@ def get_youtube_playlist(api_key, url):
     return videos
 
 def get_youtube_playlist_no_api(url):
-    """APIキーを使用しないYouTubeプレイリスト取得（HTML解析）"""
-    if "list=" in url:
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+    match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
+    if match:
+        # 動画ページに付属しているプレイリストURLなどを、純粋なプレイリスト専用URLに変換する
+        playlist_id = match.group(1)
+        clean_url = f"https://www.youtube.com/playlist?list={playlist_id}"
+        req = urllib.request.Request(clean_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
         try:
             with urllib.request.urlopen(req) as response:
                 html = response.read().decode('utf-8')
-                match = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
-                if not match:
+                match_data = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+                if not match_data:
                     raise ValueError("プレイリストデータの解析に失敗しました。")
-                data = json.loads(match.group(1))
+                data = json.loads(match_data.group(1))
                 
                 videos = []
                 def find_playlist_videos(node):
@@ -111,17 +119,16 @@ def get_youtube_playlist_no_api(url):
                     raise ValueError("プレイリスト内に動画が見つかりませんでした。")
                 return videos
         except Exception as e:
-            raise ValueError(f"APIなしでの取得に失敗しました: {e}")
+            raise ValueError(f"{e}")
     else:
-        # 単一動画URLの場合
         vid = extract_youtube_id(url)
         if vid:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "ja-JP,ja;q=0.9"})
             try:
                 with urllib.request.urlopen(req) as response:
                     html = response.read().decode('utf-8')
-                    match = re.search(r"<title>(.*?)</title>", html)
-                    title = match.group(1).replace(" - YouTube", "") if match else "YouTube Video"
+                    match_title = re.search(r"<title>(.*?)</title>", html)
+                    title = match_title.group(1).replace(" - YouTube", "") if match_title else "YouTube Video"
                     return [{"曲名": title, "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
             except Exception:
                 return [{"曲名": "YouTube Video", "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
@@ -237,7 +244,6 @@ tab1, tab2, tab3 = st.tabs(["🔗 URLから一括抽出", "🖼️ 画像から�
 with tab1:
     st.header("⚙️ 1. システム設定＆抽出モード")
     
-    # APIキー取得方法のアコーディオン案内
     with st.expander("🔑 YouTube API Key の取得方法（クリックで表示）"):
         st.markdown("""
         **【API Key 取得手順】**
@@ -248,7 +254,6 @@ with tab1:
         5. 生成された文字列（`AIzaSy...`から始まるコード）をコピーし、下の入力欄に貼り付けます。
         """)
     
-    # 抽出モード選択
     extraction_mode = st.radio(
         "YouTube抽出モードの選択",
         ["🔑 APIあり（推奨・全件高精度抽出）", "⚡ APIなし（簡易抽出・100曲程度まで）"],
@@ -305,7 +310,7 @@ with tab1:
                             df.to_excel(writer, index=False, sheet_name='Playlist Data')
                         st.download_button("📥 Excelファイルとしてダウンロード", data=output.getvalue(), file_name="playlist_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 except Exception as e:
-                    st.error(f"❌ エラーが発生しました: {e}")
+                    st.error(f"❌ エラーが発生しました: APIなしでの取得に失敗しました: {e}")
 
 # --- タブ2: 画像認識 (OCR) & VocaDB検索 ---
 with tab2:
@@ -417,3 +422,33 @@ with tab3:
                     st.error(f"❌ エラーが発生しました: {e}")
         else:
             st.warning("Excelファイルをアップロードしてください。")
+
+# ==========================================
+# 5. お問い合わせ・ご要望フォーム
+# ==========================================
+st.markdown("---")
+st.header("✉️ お問い合わせ / ご要望")
+st.markdown("システムの不具合や機能追加のご要望などがございましたら、以下のフォームから管理者に送信できます。")
+
+with st.form("contact_form"):
+    subject_input = st.text_input("件名", placeholder="例：APIなし抽出のエラーについて")
+    body_input = st.text_area("お問い合わせ内容", placeholder="発生した問題やご要望を詳細にご記入ください。", height=150)
+    
+    submitted = st.form_submit_button("管理者に送信する")
+    if submitted:
+        if not subject_input or not body_input:
+            st.warning("件名とお問い合わせ内容の両方を入力してください。")
+        else:
+            try:
+                # FormSubmitのAJAXエンドポイントを使用してメールを送信
+                res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={
+                    "件名": subject_input,
+                    "メッセージ": body_input,
+                    "_subject": f"【楽曲抽出システム】お問い合わせ: {subject_input}"
+                })
+                if res.status_code == 200:
+                    st.success("✅ 送信が完了しました。貴重なご意見ありがとうございます！")
+                else:
+                    st.error("送信に失敗しました。しばらく時間をおいてから再度お試しください。")
+            except Exception as e:
+                st.error(f"通信エラーが発生しました: {e}")
