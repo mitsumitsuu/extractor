@@ -12,6 +12,7 @@ import yt_dlp
 import streamlit.components.v1 as components
 import sqlite3
 import hashlib
+import base64
 
 # ==========================================
 # 0. データベース初期化とログイン機能
@@ -124,7 +125,7 @@ def get_default_preset():
         "mode": "⚡ 高速モード (yt-dlp使用 / API不要)", "title_mode": "✨ スッキリ出力",
         "yt_key": "", "gemini_key": "", "url": "", "exclude_words": "", "target_vocal": "", "multi_only": False,
         "min_v": 0, "max_v": 0, "min_c": 0, "max_c": 0,
-        "add_lyrics": True, "add_analysis": False, "add_bpm": False, "add_copyright": True
+        "add_lyrics": True, "add_analysis": False, "add_bpm": False
     }
 
 if "logged_in_user" not in st.session_state:
@@ -219,17 +220,6 @@ def clean_title(raw_title):
     title = re.sub(r"【.*?】|\[.*?\]", "", title)
     title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
     return title.strip()
-
-def check_copyright_ai(api_key, title):
-    if not api_key: return "不明(API未設定)"
-    genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
-    prompt = f"ボカロ曲・楽曲「{title}」はJASRACまたはNexToneに信託されている可能性が高いですか？『可能性高』『可能性低』『不明』のいずれかの単語のみで答えてください。"
-    try:
-        res = model.generate_content(prompt).text.strip()
-        return res if res in ["可能性高", "可能性低", "不明"] else "判定不能"
-    except:
-        return "エラー"
 
 def extract_vocals_ai(api_key, text_data):
     if not api_key: return "", ""
@@ -392,7 +382,7 @@ for i, tab in enumerate(preset_tabs):
 
         st.markdown("---")
         with st.expander("🔍 抽出条件・フィルター設定", expanded=True):
-            st.markdown("**【数値フィルター】**")
+            st.markdown("**【数値フィルター】** ※枠内をクリックして直接数字を入力できます。")
             cv1, cv2 = st.columns(2)
             with cv1:
                 p["min_v"] = st.number_input("最小再生数", value=p["min_v"], step=10000, key=f"minv_{pid}")
@@ -407,11 +397,10 @@ for i, tab in enumerate(preset_tabs):
             p["multi_only"] = st.checkbox("👥 複数人が歌唱している曲のみ抽出する", value=p["multi_only"], key=f"mo_{pid}")
             
             st.markdown("**【追加リンク】**")
-            cl1, cl2, cl3, cl4 = st.columns(4)
-            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク", value=p["add_lyrics"], key=f"al_{pid}")
-            with cl2: p["add_analysis"] = st.checkbox("🤔 考察検索リンク", value=p["add_analysis"], key=f"aa_{pid}")
+            cl1, cl2, cl3 = st.columns(3)
+            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク (Uta-Net優先)", value=p["add_lyrics"], key=f"al_{pid}")
+            with cl2: p["add_analysis"] = st.checkbox("🤔 考察/Wikiリンク (初音ミクwiki優先)", value=p["add_analysis"], key=f"aa_{pid}")
             with cl3: p["add_bpm"] = st.checkbox("🎛️ BPM・Keyリンク", value=p["add_bpm"], key=f"ab_{pid}")
-            with cl4: p["add_copyright"] = st.checkbox("©️ AI著作権判定", value=p.get("add_copyright", True), key=f"ac_{pid}")
 
         p["url"] = st.text_area("🔗 プレイリストURLを入力 ※履歴を残しません", value=p["url"], height=68, key=f"url_{pid}")
 
@@ -455,19 +444,9 @@ for i, tab in enumerate(preset_tabs):
                             
                             row = {"曲名": clean_t, "合成音声": vocals, "URL": f'=HYPERLINK("{url}", "{url}")'}
                             
-                            # 歌詞サイトへの直接検索リンク
-                            if p["add_lyrics"]: 
-                                row["歌詞(初音ミクwiki)"] = f'=HYPERLINK("https://w.atwiki.jp/hmiku/?cmd=search&keyword={encoded}", "初音ミクwikiで検索")'
-                                row["歌詞(Uta-Net)"] = f'=HYPERLINK("https://www.uta-net.com/search/?Keyword={encoded}&target=title", "Uta-Netで検索")'
-                            if p["add_analysis"]: 
-                                row["考察検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+考察", "考察を検索")'
-                            if p["add_bpm"]: 
-                                row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
-                            if p["add_copyright"]:
-                                if "AI" in p["mode"] and p["gemini_key"]:
-                                    row["AI信託判定"] = check_copyright_ai(p["gemini_key"], safe_t)
-                                else:
-                                    row["AI信託判定"] = "AI未設定のため判定不可"
+                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.uta-net.com/search/?keyword={encoded}", "Uta-Netで歌詞を見る")'
+                            if p["add_analysis"]: row["初音ミクwiki検索"] = f'=HYPERLINK("https://w.atwiki.jp/hmiku/search?andor=and&keyword={encoded}", "初音ミクwikiで見る")'
+                            if p["add_bpm"]: row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
                                 
                             results.append(row)
 
@@ -499,8 +478,22 @@ for i, tab in enumerate(preset_tabs):
                 csv = csv_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
             
-            st.info("👇 枠の右上にある「📋（コピーマーク）」をクリックすると、表データを一発でコピーできます！")
-            csv_string = csv_df.to_csv(index=False, sep='\t')
-            st.code(csv_string, language='csv')
+            # 安全で分かりやすいスマートコピーボタンの実装
+            b64_csv = base64.b64encode(csv_df.to_csv(index=False, sep='\t').encode('utf-8')).decode('utf-8')
+            copy_html = f"""
+            <button onclick="copyData()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
+                📋 表データをクリップボードにコピー
+            </button>
+            <script>
+            function copyData() {{
+                const str = decodeURIComponent(escape(window.atob('{b64_csv}')));
+                navigator.clipboard.writeText(str).then(function() {{
+                    alert("表データをコピーしました！ Excel等に貼り付け可能です。");
+                }});
+            }}
+            </script>
+            """
+            components.html(copy_html, height=50)
             
-            st.dataframe(saved_df)
+            # 表の高さを制限してコンパクトに表示 (約3～4行分)
+            st.dataframe(saved_df, height=150, use_container_width=True)
