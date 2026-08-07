@@ -75,12 +75,18 @@ def load_setting_from_db(username):
 # 1. UIカスタマイズ＆JavaScript強制注入
 # ==========================================
 st.set_page_config(page_title="楽曲抽出＆特定システム Ultimate", layout="wide")
+
+# 上部の謎の空白や不要な要素を完全に削除し、スッキリさせるCSS
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
 footer {visibility: hidden;}
 header {visibility: hidden;}
 .st-emotion-cache-1wbqy5l {display: none;}
+.block-container {
+    padding-top: 1.5rem !important;
+    padding-bottom: 2rem !important;
+}
 </style>
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
@@ -141,58 +147,60 @@ if "results" not in st.session_state:
     st.session_state.results = {i: None for i in range(1, 11)}
 
 # ==========================================
-# 3. サイドバー: ログイン＆全体設定
+# 3. 上部ヘッダー（アカウント設定のポップオーバー化）
 # ==========================================
-with st.sidebar:
-    st.header("👤 アカウント & DB保存")
-    if st.session_state.logged_in_user:
-        st.success(f"ログイン中: {st.session_state.logged_in_user}")
-        if st.button("ログアウト"):
-            st.session_state.logged_in_user = None
-            st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
-            st.rerun()
-            
-        st.markdown("---")
-        st.subheader("⚙️ 全体設定")
-        current_hide_setting = load_setting_from_db(st.session_state.logged_in_user)
-        new_hide_setting = st.checkbox("初期化時の警告を非表示にする", value=current_hide_setting)
-        if current_hide_setting != new_hide_setting:
-            save_setting_to_db(st.session_state.logged_in_user, new_hide_setting)
-            st.session_state.hide_warning_forever = new_hide_setting
-            st.rerun()
-            
-        if st.button("💾 現在の全プリセットをDBに保存"):
-            for pid, p_data in st.session_state.presets.items():
-                save_preset_to_db(st.session_state.logged_in_user, pid, p_data)
-            st.success("データベースに保存しました！")
-    else:
-        log_mode = st.radio("メニュー", ["ログイン", "新規登録"])
-        u_name = st.text_input("ユーザー名")
-        u_pass = st.text_input("パスワード", type="password")
-        if log_mode == "新規登録":
-            if st.button("登録"):
-                if register_user(u_name, u_pass):
-                    st.success("登録完了！ログインしてください。")
-                else:
-                    st.error("そのユーザー名は既に使用されています。")
-        else:
-            if st.button("ログイン"):
-                if login_user(u_name, u_pass):
-                    st.session_state.logged_in_user = u_name
-                    loaded = load_presets_from_db(u_name)
-                    for pid, p_data in loaded.items():
-                        st.session_state.presets[pid].update(p_data)
-                    st.session_state.hide_warning_forever = load_setting_from_db(u_name)
-                    st.rerun()
-                else:
-                    st.error("ユーザー名かパスワードが違います。")
+col_title, col_link, col_auth = st.columns([6, 1.5, 2.5])
 
-col_title, col_link = st.columns([4, 1])
 with col_title:
     st.title("🎶 楽曲抽出システム Ultimate")
+
 with col_link:
-    st.write("\n")
-    st.markdown("[👤 制作者 (Mitsu) の lit.link](https://lit.link/_mitsu_3_)")
+    st.markdown("<div style='margin-top: 25px;'><a href='https://lit.link/_mitsu_3_' target='_blank'>👤 制作者のlit.link</a></div>", unsafe_allow_html=True)
+
+with col_auth:
+    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
+    with st.popover("⚙️ アカウント設定 / ログイン"):
+        if st.session_state.logged_in_user:
+            st.success(f"ログイン中: {st.session_state.logged_in_user}")
+            if st.button("ログアウト"):
+                st.session_state.logged_in_user = None
+                st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
+                st.rerun()
+                
+            st.markdown("---")
+            st.subheader("全体設定")
+            current_hide_setting = load_setting_from_db(st.session_state.logged_in_user)
+            new_hide_setting = st.checkbox("初期化時の警告を非表示にする", value=current_hide_setting)
+            if current_hide_setting != new_hide_setting:
+                save_setting_to_db(st.session_state.logged_in_user, new_hide_setting)
+                st.session_state.hide_warning_forever = new_hide_setting
+                st.rerun()
+                
+            if st.button("💾 現在の全プリセットをDBに保存"):
+                for pid, p_data in st.session_state.presets.items():
+                    save_preset_to_db(st.session_state.logged_in_user, pid, p_data)
+                st.success("データベースに保存しました！")
+        else:
+            log_mode = st.radio("メニュー", ["ログイン", "新規登録"], horizontal=True)
+            u_name = st.text_input("ユーザー名")
+            u_pass = st.text_input("パスワード", type="password")
+            if log_mode == "新規登録":
+                if st.button("登録"):
+                    if register_user(u_name, u_pass):
+                        st.success("登録完了！ログインしてください。")
+                    else:
+                        st.error("そのユーザー名は既に使用されています。")
+            else:
+                if st.button("ログイン"):
+                    if login_user(u_name, u_pass):
+                        st.session_state.logged_in_user = u_name
+                        loaded = load_presets_from_db(u_name)
+                        for pid, p_data in loaded.items():
+                            st.session_state.presets[pid].update(p_data)
+                        st.session_state.hide_warning_forever = load_setting_from_db(u_name)
+                        st.rerun()
+                    else:
+                        st.error("ユーザー名かパスワードが違います。")
 
 # ==========================================
 # 4. データ処理・解析関数
@@ -444,7 +452,7 @@ for i, tab in enumerate(preset_tabs):
                             
                             row = {"曲名": clean_t, "合成音声": vocals, "URL": f'=HYPERLINK("{url}", "{url}")'}
                             
-                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.uta-net.com/search/?keyword={encoded}", "Uta-Netで歌詞を見る")'
+                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+歌詞+(site:uta-net.com+OR+site:w.atwiki.jp/hmiku)", "歌詞サイトを検索")'
                             if p["add_analysis"]: row["初音ミクwiki検索"] = f'=HYPERLINK("https://w.atwiki.jp/hmiku/search?andor=and&keyword={encoded}", "初音ミクwikiで見る")'
                             if p["add_bpm"]: row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
                                 
@@ -466,34 +474,62 @@ for i, tab in enumerate(preset_tabs):
         if saved_df is not None and not saved_df.empty:
             st.success(f"✅ {len(saved_df)}曲の抽出結果 (プリセット {pid})")
             
-            c_dl1, c_dl2 = st.columns(2)
-            with c_dl1:
-                excel_data = create_advanced_excel(saved_df)
-                st.download_button("📥 XLSXダウンロード", excel_data, f"playlist_p{pid}.xlsx")
-            with c_dl2:
-                csv_df = saved_df.copy()
-                for col in csv_df.columns:
-                    if csv_df[col].dtype == object:
-                        csv_df[col] = csv_df[col].apply(lambda x: re.search(r'"(https?://.*?)"', str(x)).group(1) if '=HYPERLINK' in str(x) else x)
-                csv = csv_df.to_csv(index=False).encode('utf-8-sig')
-                st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
+            # alert()ポップアップを出さずにボタン自身の色・文字を変更するスマートコピーボタン
+            csv_df = saved_df.copy()
+            for col in csv_df.columns:
+                if csv_df[col].dtype == object:
+                    csv_df[col] = csv_df[col].apply(lambda x: re.search(r'"(https?://.*?)"', str(x)).group(1) if '=HYPERLINK' in str(x) else x)
             
-            # 安全で分かりやすいスマートコピーボタンの実装
             b64_csv = base64.b64encode(csv_df.to_csv(index=False, sep='\t').encode('utf-8')).decode('utf-8')
             copy_html = f"""
-            <button onclick="copyData()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
+            <button id="copyBtn{pid}" onclick="copyData{pid}()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
                 📋 表データをクリップボードにコピー
             </button>
             <script>
-            function copyData() {{
+            function copyData{pid}() {{
+                const btn = document.getElementById("copyBtn{pid}");
                 const str = decodeURIComponent(escape(window.atob('{b64_csv}')));
                 navigator.clipboard.writeText(str).then(function() {{
-                    alert("表データをコピーしました！ Excel等に貼り付け可能です。");
+                    btn.innerHTML = "✅ コピーしました！";
+                    btn.style.backgroundColor = "#1b5e20";
+                    setTimeout(function() {{
+                        btn.innerHTML = "📋 表データをクリップボードにコピー";
+                        btn.style.backgroundColor = "#2e7d32";
+                    }}, 2500);
                 }});
             }}
             </script>
             """
             components.html(copy_html, height=50)
             
-            # 表の高さを制限してコンパクトに表示 (約3～4行分)
-            st.dataframe(saved_df, height=150, use_container_width=True)
+            # 元の高さ制限なしの表（全件表示）に戻しました
+            st.dataframe(saved_df, use_container_width=True)
+
+# ==========================================
+# 6. お問い合わせ・ご要望フォーム (復元)
+# ==========================================
+st.markdown("---")
+st.header("✉️ お問い合わせ / ご要望")
+st.markdown("システムの不具合や機能追加のご要望などがございましたら、以下のフォームから管理者に送信できます。")
+
+with st.form("contact_form"):
+    subject_input = st.text_input("件名", placeholder="例：APIなし抽出のエラーについて")
+    body_input = st.text_area("お問い合わせ内容", placeholder="発生した問題やご要望を詳細にご記入ください。", height=150)
+    
+    submitted = st.form_submit_button("管理者に送信する")
+    if submitted:
+        if not subject_input or not body_input:
+            st.warning("件名とお問い合わせ内容の両方を入力してください。")
+        else:
+            try:
+                res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={
+                    "件名": subject_input,
+                    "メッセージ": body_input,
+                    "_subject": f"【楽曲抽出システム】お問い合わせ: {subject_input}"
+                })
+                if res.status_code == 200:
+                    st.success("✅ 送信が完了しました。貴重なご意見ありがとうございます！")
+                else:
+                    st.error("送信に失敗しました。しばらく時間をおいてから再度お試しください。")
+            except Exception as e:
+                st.error(f"通信エラーが発生しました: {e}")
