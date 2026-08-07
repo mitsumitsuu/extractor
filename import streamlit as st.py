@@ -392,7 +392,7 @@ for i, tab in enumerate(preset_tabs):
 
         st.markdown("---")
         with st.expander("🔍 抽出条件・フィルター設定", expanded=True):
-            st.markdown("**【数値フィルター】** ※枠内をクリックして直接数字を入力できます。")
+            st.markdown("**【数値フィルター】**")
             cv1, cv2 = st.columns(2)
             with cv1:
                 p["min_v"] = st.number_input("最小再生数", value=p["min_v"], step=10000, key=f"minv_{pid}")
@@ -408,10 +408,10 @@ for i, tab in enumerate(preset_tabs):
             
             st.markdown("**【追加リンク】**")
             cl1, cl2, cl3, cl4 = st.columns(4)
-            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイト直リンク", value=p["add_lyrics"], key=f"al_{pid}")
+            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク", value=p["add_lyrics"], key=f"al_{pid}")
             with cl2: p["add_analysis"] = st.checkbox("🤔 考察検索リンク", value=p["add_analysis"], key=f"aa_{pid}")
             with cl3: p["add_bpm"] = st.checkbox("🎛️ BPM・Keyリンク", value=p["add_bpm"], key=f"ab_{pid}")
-            with cl4: p["add_copyright"] = st.checkbox("©️ JASRAC/NexTone検索", value=p.get("add_copyright", True), key=f"ac_{pid}")
+            with cl4: p["add_copyright"] = st.checkbox("©️ AI著作権判定", value=p.get("add_copyright", True), key=f"ac_{pid}")
 
         p["url"] = st.text_area("🔗 プレイリストURLを入力 ※履歴を残しません", value=p["url"], height=68, key=f"url_{pid}")
 
@@ -455,15 +455,19 @@ for i, tab in enumerate(preset_tabs):
                             
                             row = {"曲名": clean_t, "合成音声": vocals, "URL": f'=HYPERLINK("{url}", "{url}")'}
                             
-                            # 歌詞サイト直リンク化 (Uta-Netの検索結果ページへ直行)
-                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.uta-net.com/search/?keyword={encoded}&type=in", "Uta-Netで直接検索")'
-                            if p["add_analysis"]: row["考察検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+考察", "考察を検索")'
-                            if p["add_bpm"]: row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
+                            # 歌詞サイトへの直接検索リンク
+                            if p["add_lyrics"]: 
+                                row["歌詞(初音ミクwiki)"] = f'=HYPERLINK("https://w.atwiki.jp/hmiku/?cmd=search&keyword={encoded}", "初音ミクwikiで検索")'
+                                row["歌詞(Uta-Net)"] = f'=HYPERLINK("https://www.uta-net.com/search/?Keyword={encoded}&target=title", "Uta-Netで検索")'
+                            if p["add_analysis"]: 
+                                row["考察検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+考察", "考察を検索")'
+                            if p["add_bpm"]: 
+                                row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
                             if p["add_copyright"]:
-                                row["JASRAC検索"] = f'=HYPERLINK("https://www2.jasrac.or.jp/eJwid/", "JASRAC J-WIDを開く")'
-                                row["NexTone検索"] = f'=HYPERLINK("https://search.nex-tone.co.jp/terms?title={encoded}", "NexToneを検索")'
                                 if "AI" in p["mode"] and p["gemini_key"]:
                                     row["AI信託判定"] = check_copyright_ai(p["gemini_key"], safe_t)
+                                else:
+                                    row["AI信託判定"] = "AI未設定のため判定不可"
                                 
                             results.append(row)
 
@@ -495,28 +499,8 @@ for i, tab in enumerate(preset_tabs):
                 csv = csv_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
             
-            # 目立つ独自のコピーボタンをHTMLで生成
-            copy_html = f"""
-            <script>
-            function copyTable() {{
-                const text = `{csv_df.to_csv(index=False, sep='\\t').replace('`', '\\`')}`;
-                navigator.clipboard.writeText(text).then(function() {{
-                    const btn = document.getElementById('copy-btn');
-                    btn.innerText = '✅ コピー完了！';
-                    btn.style.backgroundColor = '#45a049';
-                    setTimeout(() => {{
-                        btn.innerText = '📋 表データをコピー';
-                        btn.style.backgroundColor = '#4CAF50';
-                    }}, 2000);
-                }});
-            }}
-            </script>
-            <button id="copy-btn" onclick="copyTable()" style="
-                padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;
-                background-color: #4CAF50; color: white; border: none; border-radius: 5px;
-                box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: 0.3s;
-            ">📋 表データをコピー</button>
-            """
-            components.html(copy_html, height=50)
+            st.info("👇 枠の右上にある「📋（コピーマーク）」をクリックすると、表データを一発でコピーできます！")
+            csv_string = csv_df.to_csv(index=False, sep='\t')
+            st.code(csv_string, language='csv')
             
             st.dataframe(saved_df)
