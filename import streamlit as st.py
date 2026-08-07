@@ -14,14 +14,20 @@ import yt_dlp
 # ==========================================
 # 1. 初期設定とデフォルト辞書
 # ==========================================
-DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花"
+DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
 PLAYLIST_NG_WORDS = "short, 歌ってみた, 踊ってみた, cover, カバー, inst, off vocal, オフボーカル, カラオケ, 実況, 弾いてみた"
 
 st.set_page_config(page_title="楽曲抽出＆特定システム", layout="wide")
 
 # ==========================================
-# 2. タイトルと初心者向けガイド
+# 2. セッション状態の初期化（結果が消える現象の防止）
+# ==========================================
+if "extracted_df" not in st.session_state:
+    st.session_state.extracted_df = None
+
+# ==========================================
+# 3. タイトルと初心者向けガイド
 # ==========================================
 col_title, col_link = st.columns([4, 1])
 with col_title:
@@ -43,10 +49,20 @@ st.markdown("""
 """)
 
 # ==========================================
-# 3. データ処理ロジック（関数群）
+# 4. データ処理ロジック（関数群）
 # ==========================================
+def clean_vocalist_name(name):
+    """合成音声の細かな種類（Power, V3, Append等）や括弧書きを除外して綺麗にする"""
+    if not name:
+        return ""
+    # 括弧とその中身を削除 (例: (Power), [Append] など)
+    name = re.sub(r'[\(（\[【].*?[\)）\]】]', '', name)
+    # バージョン名や細かな種類名を削除
+    version_keywords = r'\b(V\d|V4X|Append|Power|Whisper|Soft|Sweet|Solid|Natural|Dark|Light|Adult|Straight|Mellow|Cute|Cool|Lite|Natural|Spicy|Quiet|Calm)\b'
+    name = re.sub(version_keywords, '', name, flags=re.IGNORECASE)
+    return name.strip()
+
 def extract_vocals(title, description, keywords, ng_list):
-    """手動設定したキーワードに基づく音声抽出"""
     found_vocals = set()
     title_str = str(title) if title else ""
     desc_str = str(description) if description else ""
@@ -55,12 +71,12 @@ def extract_vocals(title, description, keywords, ng_list):
     if not any(ng in desc_str for ng in ng_list):
         for kw in keywords:
             if kw in desc_str: found_vocals.add(kw)
-    return " / ".join(list(found_vocals))
+    
+    cleaned_list = [clean_vocalist_name(v) for v in found_vocals if clean_vocalist_name(v)]
+    return " / ".join(list(set(cleaned_list)))
 
 def get_vocalist_from_vocadb(query_text):
-    """VocaDB APIを使用して楽曲の公式ボーカル名を取得する（究極のバックアップ）"""
     url = "https://vocadb.net/api/songs"
-    # FieldsにArtistsを指定し、歌手データを取得する
     params = {"query": query_text, "maxResults": 1, "sort": "FavoritedTimes", "fields": "Artists"}
     try:
         res = requests.get(url, params=params, headers={"Accept": "application/json"})
@@ -68,19 +84,26 @@ def get_vocalist_from_vocadb(query_text):
             items = res.json().get("items", [])
             if items:
                 artists = items[0].get("artists", [])
-                # カテゴリが "Vocalist" になっているアーティスト名だけを抽出
-                vocalists = [a.get("name") for a in artists if "Vocalist" in a.get("categories", "")]
-                return " / ".join(vocalists)
+                vocalists = [clean_vocalist_name(a.get("name")) for a in artists if "Vocalist" in a.get("categories", "")]
+                vocalists = [v for v in vocalists if v]
+                return " / ".join(list(set(vocalists)))
     except:
         pass
     return ""
 
 def clean_title(raw_title):
+    """「/」「／」、半角・全角スペース以降の不要な情報、〇〇Pなどを削除して曲名をスッキリさせる"""
     title = str(raw_title)
-    title = re.sub(r"(?i)[\(（\[【].*?(remix|bootleg|edit|mashup|flip|vip|cover).*?[\)）\]】]", "", title)
+    # 1. 「/」や「／」以降を削除
+    title = re.split(r'\s*[/／]\s*', title)[0]
+    # 2. 〇〇P のような表記（例: DECO*27P, 〇〇P）を削除
+    title = re.sub(r'\s+[^\s]*P\b', '', title, flags=re.IGNORECASE)
+    # 3. リミックスやカバー、各種括弧内の不要な情報を削除
+    title = re.sub(r"(?i)[\(（\[【].*?(remix|bootleg|edit|mashup|flip|vip|cover|feat\..*?).*?[\)）\]】]", "", title)
     title = re.sub(r"【.*?】|\[.*?\]", "", title)
+    # 4. feat. や ft. 以降を削除
     title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
-    title = re.split(r"\s+/\s+|\s+-\s+", title)[0]
+    # 5. 前後のスペースや余分な記号を整える
     return title.strip()
 
 def get_youtube_playlist(api_key, url):
@@ -224,7 +247,6 @@ def extract_any_url(row_data):
     return None
 
 def load_uploaded_file(uploaded_file):
-    """ExcelおよびCSV(文字コード自動判定)を読み込む汎用関数"""
     if uploaded_file.name.lower().endswith('.csv'):
         try:
             return pd.read_csv(uploaded_file, encoding='utf-8')
@@ -234,7 +256,7 @@ def load_uploaded_file(uploaded_file):
         return pd.read_excel(uploaded_file)
 
 # ==========================================
-# 4. メイン画面（タブ構造）
+# 5. メイン画面（タブ構造）
 # ==========================================
 tab1, tab2, tab3 = st.tabs(["🔗 URLから一括抽出", "🖼️ 画像から特定", "📁 プレイリスト生成"])
 
@@ -323,13 +345,12 @@ with tab1:
                         else:
                             final_title = clean_title(raw_title)
                             
-                        # ② 「スッキリ出力」モード等でボーカルが抜け落ちた（見つからなかった）場合、VocaDBに問い合わせ
+                        # ② ボーカルが抜け落ちた場合、VocaDBに問い合わせ
                         if not extracted_vocals:
-                            # 検索用には綺麗なタイトルを使う
                             search_title = clean_title(raw_title)
                             db_vocals = get_vocalist_from_vocadb(search_title)
                             if db_vocals:
-                                extracted_vocals = f"💡 {db_vocals}" # VocaDBから補完されたことを分かりやすくマーク
+                                extracted_vocals = db_vocals
                             
                         results.append({
                             "曲名": final_title,
@@ -338,19 +359,19 @@ with tab1:
                         })
                     
                     progress_text.empty()
-                    df = pd.DataFrame(results)
+                    st.session_state.extracted_df = pd.DataFrame(results)
                     
-                    if df.empty:
-                        st.warning("対象となる楽曲が見つかりませんでした。")
-                    else:
-                        st.success(f"✅ {len(df)}曲の解析が完了しました！")
-                        st.dataframe(df, use_container_width=True)
-                        output = BytesIO()
-                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                            df.to_excel(writer, index=False, sheet_name='Playlist Data')
-                        st.download_button("📥 Excelファイルとしてダウンロード", data=output.getvalue(), file_name="playlist_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
+
+    # セッションにデータが存在する場合は常に表示・ダウンロードボタンを保持（結果が消えるのを防止）
+    if st.session_state.extracted_df is not None and not st.session_state.extracted_df.empty:
+        st.success(f"✅ {len(st.session_state.extracted_df)}曲の解析結果を保持しています！")
+        st.dataframe(st.session_state.extracted_df, use_container_width=True)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            st.session_state.extracted_df.to_excel(writer, index=False, sheet_name='Playlist Data')
+        st.download_button("📥 Excelファイルとしてダウンロード", data=output.getvalue(), file_name="playlist_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
 
 # --- タブ2: 画像認識 (OCR) & VocaDB検索 ---
 with tab2:
@@ -375,7 +396,7 @@ with tab2:
                 else: st.warning("VocaDBに一致する楽曲が見つかりませんでした。")
         else: st.warning("画像を入れるか、検索キーワードを入力してください。")
 
-# --- タブ3: Excelからプレイリスト生成 (API不要版) ---
+# --- タブ3: Excel/CSVからプレイリスト生成 (API不要版) ---
 with tab3:
     st.header("📁 Excel / CSVからプレイリスト生成 (API不要版)")
     st.markdown("アップロードしたファイル（ExcelまたはCSV）のURLリストから、即席のYouTubeプレイリストURLを生成します。\n\n※YouTube以外のリンク（ニコニコ動画など）が含まれている場合は、下に個別のアクセスリンクとしてまとめられます。")
@@ -385,7 +406,6 @@ with tab3:
     playlist_ng_words_input = st.text_area("🚫 検索時の除外ワード（※完全一致モードをオフにした場合のみ機能します）", PLAYLIST_NG_WORDS, height=100)
     pl_ng_words = [n.strip() for n in playlist_ng_words_input.split(",") if n.strip()]
     
-    # xlsx, xlsに加えてcsvにも対応
     uploaded_data_file = st.file_uploader("楽曲リスト（.xlsx / .xls / .csv）をアップロード", type=["xlsx", "xls", "csv"])
     
     if st.button("プレイリストURLを生成する", type="primary"):
@@ -465,7 +485,7 @@ with tab3:
             st.warning("ファイルをアップロードしてください。")
 
 # ==========================================
-# 5. お問い合わせ・ご要望フォーム
+# 6. お問い合わせ・ご要望フォーム
 # ==========================================
 st.markdown("---")
 st.header("✉️ お問い合わせ / ご要望")
