@@ -160,9 +160,11 @@ def search_youtube_no_api_advanced(query, ng_words_list):
         pass
     return None
 
-def extract_youtube_id(url):
-    url_str = str(url)
-    match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url_str)
+def extract_youtube_id(url_text):
+    """テキスト内からYouTubeの11桁の動画IDを抽出する"""
+    url_str = str(url_text)
+    # v=, youtu.be/, shorts/, live/, embed/ などの形式に幅広く対応
+    match = re.search(r"(?:v=|youtu\.be/|shorts/|live/|embed/)([a-zA-Z0-9_-]{11})", url_str)
     if match: return match.group(1)
     return None
 
@@ -238,7 +240,7 @@ with tab3:
     st.header("📁 Excelからプレイリスト生成 (API不要版)")
     st.markdown("アップロードしたExcelファイルのURLリストから、即席のYouTubeプレイリストURLを生成します。")
     
-    strict_mode = st.checkbox("✅ 完全一致モード（YouTubeのURLが入力されている楽曲のみを抽出し、曖昧な検索補完を行わない）", value=True)
+    strict_mode = st.checkbox("✅ 完全一致モード（列名に関わらず、YouTubeのURLが入力されている楽曲のみを抽出し、曖昧な検索補完を行わない）", value=True)
     
     playlist_ng_words_input = st.text_area("🚫 検索時の除外ワード（※完全一致モードをオフにした場合のみ機能します）", PLAYLIST_NG_WORDS, height=100)
     pl_ng_words = [n.strip() for n in playlist_ng_words_input.split(",") if n.strip()]
@@ -263,9 +265,13 @@ with tab3:
                         col_name = "曲名" if "曲名" in df.columns else (df.columns[0] if len(df.columns) > 0 else "不明")
                         song_title = str(row.get(col_name, f"不明な曲（{track_number}行目）"))
                         
-                        # ① まずはURL列から確実なYouTube IDを取得
-                        if "URL" in df.columns:
-                            vid = extract_youtube_id(row["URL"])
+                        # ① 列名に関わらず、その行のすべてのセルをチェックしてYouTubeのIDを探す
+                        for col in df.columns:
+                            cell_value = str(row[col])
+                            extracted_id = extract_youtube_id(cell_value)
+                            if extracted_id:
+                                vid = extracted_id
+                                break # 見つかったらそれ以上探さない
                         
                         # ② YouTube IDが無く、かつ「完全一致モード」がオフの場合のみ検索を行う
                         if not vid:
@@ -304,7 +310,7 @@ with tab3:
                             st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
                             st.code(playlist_url)
                     else:
-                        st.error("有効なYouTube動画リンクが一つも見つかりませんでした。")
+                        st.error("有効なYouTube動画リンクが一つも見つかりませんでした。ファイル内にYouTubeのURLが直接記載されているか確認してください。")
                 except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
         else:
