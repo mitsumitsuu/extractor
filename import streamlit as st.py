@@ -11,7 +11,7 @@ from io import BytesIO
 import yt_dlp
 
 # ==========================================
-# UIカスタマイズ
+# UIカスタマイズ & セッション初期化
 # ==========================================
 st.set_page_config(page_title="楽曲抽出＆特定システム Pro", layout="wide")
 hide_streamlit_style = """
@@ -24,10 +24,13 @@ header {visibility: hidden;}
 """
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
+if "extracted_df" not in st.session_state:
+    st.session_state.extracted_df = pd.DataFrame()
+
 # ==========================================
 # 1. 初期設定とデフォルト辞書
 # ==========================================
-DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI"
+DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI, 音街ウナ"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
 
 col_title, col_link = st.columns([4, 1])
@@ -48,12 +51,41 @@ with st.expander("📖 詳しい使い方と操作ガイド（クリックで開
     *   **✨ AI完璧抽出モード:** Gemini APIが必要。「オリジナルPV」や「〇〇P」などのノイズをAIが文脈から判断して完璧に除去し、純粋な曲名と合成音声名だけを抽出します。
 
     **【数値の直接入力について】**
-    再生数などのフィルター数値を入力する際、`+` `-` ボタンを押すだけでなく、**入力枠の中を直接クリックしてキーボードから任意の数字（例：50000）を直接打ち込むことが可能**です。
+    再生数などの数値を入力する際、枠の中をクリックしてキーボードから任意の数字（例：50000）を直接打ち込むことが可能です。
     """)
 
 # ==========================================
 # 3. データ処理関数
 # ==========================================
+def clean_vocalist_name(name):
+    if not name: return ""
+    name = re.sub(r'[\(（\[【].*?[\)）\]】]', '', name)
+    version_keywords = r'\b(V\d|V4X|Append|Power|Whisper|Soft|Sweet|Solid|Natural|Dark|Light|Adult|Straight|Mellow|Cute|Cool|Lite|Natural|Spicy|Quiet|Calm)\b'
+    name = re.sub(version_keywords, '', name, flags=re.IGNORECASE)
+    return name.strip()
+
+def extract_vocals_manual(title, description, keywords, ng_list):
+    found_vocals = set()
+    title_str = str(title) if title else ""
+    desc_str = str(description) if description else ""
+    for kw in keywords:
+        if kw in title_str: found_vocals.add(kw)
+    if not any(ng in desc_str for ng in ng_list):
+        for kw in keywords:
+            if kw in desc_str: found_vocals.add(kw)
+    
+    cleaned_list = [clean_vocalist_name(v) for v in found_vocals if clean_vocalist_name(v)]
+    return " / ".join(list(set(cleaned_list)))
+
+def clean_title(raw_title):
+    title = str(raw_title)
+    title = re.split(r'\s*[/／]\s*', title)[0]
+    title = re.sub(r'\s+[^\s]*P\b', '', title, flags=re.IGNORECASE)
+    title = re.sub(r"(?i)[\(（\[【].*?(remix|bootleg|edit|mashup|flip|vip|cover|feat\..*?|long ver|short ver|MV|オリジナル).*?[\)）\]】]", "", title)
+    title = re.sub(r"【.*?】|\[.*?\]", "", title)
+    title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
+    return title.strip()
+
 def extract_vocals_ai(api_key, text_data):
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
@@ -69,7 +101,6 @@ def extract_vocals_ai(api_key, text_data):
     """
     try:
         response = model.generate_content(prompt)
-        # コピペ時のSyntaxErrorを防ぐため、バッククォート3つの直接記述を避け正規表現で処理
         res_text = re.sub(r'`{3}(json)?', '', response.text, flags=re.IGNORECASE).strip()
         result = json.loads(res_text)
         return result.get("title", ""), result.get("vocals", "")
@@ -110,7 +141,7 @@ def get_youtube_playlist_api(api_key, url, min_views, max_views, min_comments, m
             videos.append({
                 "曲名": title,
                 "概要欄データ": item["snippet"].get("description", ""),
-                "URL": f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){vid}",
+                "URL": f"https://www.youtube.com/watch?v={vid}",
                 "再生数": views,
                 "コメント数": comments
             })
@@ -128,7 +159,7 @@ def get_playlist_ytdlp(url):
             entries = info.get('entries', [info])
             for entry in entries:
                 if entry and (entry.get('url') or entry.get('id')):
-                    vid_url = entry.get('url') or f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){entry.get('id')}"
+                    vid_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
                     videos.append({
                         "曲名": entry.get('title', 'Unknown'),
                         "概要欄データ": entry.get('description', ''),
@@ -161,8 +192,19 @@ with tab1:
 
     st.markdown("---")
     
-    with st.expander("🔍 詳細フィルター設定（再生数・除外ワードなど）"):
-        st.markdown("**【数値フィルター】** ※枠内をクリックしてキーボードから直接数字を入力できます。")
+    with st.expander("🔍 詳細フィルター設定（除外・限定・リンク生成など）"):
+        
+        st.markdown("**【ボーカル指定フィルター】**")
+        target_vocals_input = st.text_input("🎧 この合成音声が歌っている曲だけ抽出 (空白で全抽出 / 複数指定はカンマ区切り)", placeholder="例: 初音ミク, GUMI")
+        target_vocal_list = [v.strip() for v in target_vocals_input.split(',') if v.strip()]
+        
+        multi_vocal_only = st.checkbox("👥 複数人が歌唱している曲のみ抽出する", value=False)
+        
+        st.markdown("**【除外設定】**")
+        exclude_words = st.text_area("🚫 この曲（ワード）は除外して抽出 (改行区切りで複数指定)", placeholder="例:\n初音ミクの消失\n踊ってみた")
+        exclude_list = [w.strip() for w in exclude_words.split('\n') if w.strip()]
+        
+        st.markdown("**【数値フィルター】** ※枠内をクリックして直接数字を入力できます。")
         col_v1, col_v2 = st.columns(2)
         with col_v1:
             min_v = st.number_input("最小再生数", value=0, step=10000, format="%d")
@@ -171,11 +213,7 @@ with tab1:
             min_c = st.number_input("最小コメント数", value=0, step=100, format="%d")
             max_c = st.number_input("最大コメント数 (0で無制限)", value=0, step=100, format="%d")
             
-        st.markdown("**【除外設定】**")
-        exclude_words = st.text_area("除外する楽曲タイトル・ワード (改行区切りで複数指定)", placeholder="例:\n初音ミクの消失\n踊ってみた")
-        exclude_list = [w.strip() for w in exclude_words.split('\n') if w.strip()]
-        
-        st.markdown("**【追加リンクの生成】** 抽出結果のExcelに追加したいリンクにチェックを入れてください。")
+        st.markdown("**【追加リンクの生成】** 抽出結果に追加したいリンクにチェックを入れてください。")
         col_link1, col_link2, col_link3 = st.columns(3)
         with col_link1:
             add_lyrics = st.checkbox("📝 歌詞検索リンクを追加", value=True)
@@ -183,16 +221,18 @@ with tab1:
             add_analysis = st.checkbox("🤔 考察検索リンクを追加", value=False)
         with col_link3:
             add_bpm = st.checkbox("🎛️ BPM・キー検索リンクを追加", value=False)
+            
+        # 手動抽出用のキーワード設定を非表示（裏側で動作）
+        target_keywords = [k.strip() for k in DEFAULT_KEYWORDS.split(",")]
+        ng_words = [n.strip() for n in DEFAULT_NG_WORDS.split(",")]
 
     st.markdown("---")
     st.header("🔗 2. URL入力と抽出開始")
     
-    # URL履歴（オートコンプリート）の切り替え
-    history_mode = st.radio("URL入力枠の予測変換（履歴）", ["表示する", "表示しない（履歴を隠す）"], horizontal=True)
+    history_mode = st.radio("URL入力枠の予測変換（履歴）", ["表示しない（履歴を隠す）", "表示する"], horizontal=True)
     if history_mode == "表示する":
         playlist_url = st.text_input("URLを入力 (YouTube / SoundCloud)")
     else:
-        # text_areaを使用することでブラウザの強引な履歴表示を無効化
         playlist_url = st.text_area("URLを入力 (YouTube / SoundCloud) ※履歴を残しません", height=68)
 
     if st.button("抽出開始", type="primary"):
@@ -217,67 +257,110 @@ with tab1:
                         if any(ex in raw_title for ex in exclude_list):
                             continue
                             
-                        # AIモード判定
+                        # AIモード or 通常モードの抽出
                         if "AI" in mode and gemini_key:
                             clean_t, vocals = extract_vocals_ai(gemini_key, f"{raw_title}\n{desc}")
-                            # AIが空を返した場合のフェイルセーフ
-                            if not clean_t: clean_t = raw_title
+                            if not clean_t: clean_t = clean_title(raw_title)
+                            if not vocals: vocals = extract_vocals_manual(raw_title, desc, target_keywords, ng_words)
                         else:
-                            clean_t = raw_title
-                            vocals = "手動抽出モード"
+                            clean_t = clean_title(raw_title)
+                            vocals = extract_vocals_manual(raw_title, desc, target_keywords, ng_words)
+                        
+                        # フィルター判定: 特定の合成音声のみ
+                        if target_vocal_list:
+                            has_target = False
+                            for target in target_vocal_list:
+                                if target.lower() in vocals.lower():
+                                    has_target = True
+                                    break
+                            if not has_target:
+                                continue
+                                
+                        # フィルター判定: 複数人歌唱のみ
+                        if multi_vocal_only:
+                            if "/" not in vocals:
+                                continue
                             
                         row = {"曲名": clean_t, "合成音声": vocals, "URL": url}
                         
-                        # URLエンコード時のエラー（expected bytes）を防ぐため、必ず文字列に変換
                         safe_title = str(clean_t) if clean_t else "Unknown"
                         encoded_title = urllib.parse.quote(safe_title)
                         
-                        # 個別チェックボックスに基づくリンク追加
                         if add_lyrics:
-                            row["歌詞検索"] = f"[https://www.google.com/search?q=](https://www.google.com/search?q=){encoded_title}+歌詞"
+                            row["歌詞検索"] = f"https://www.google.com/search?q={encoded_title}+歌詞"
                         if add_analysis:
-                            row["考察検索"] = f"[https://www.google.com/search?q=](https://www.google.com/search?q=){encoded_title}+考察"
+                            row["考察検索"] = f"https://www.google.com/search?q={encoded_title}+考察"
                         if add_bpm:
-                            row["BPM・キー検索"] = f"[https://www.google.com/search?q=](https://www.google.com/search?q=){encoded_title}+BPM+Key"
+                            row["BPM・キー検索"] = f"https://www.google.com/search?q={encoded_title}+BPM+Key"
                             
                         results.append(row)
 
-                    df = pd.DataFrame(results)
-                    if df.empty:
-                        st.warning("条件に一致する楽曲がありませんでした。除外設定やフィルターが厳しすぎる可能性があります。")
-                    else:
-                        st.success(f"✅ {len(df)}曲を抽出しました！")
-                        st.dataframe(df)
-                        
-                        # ダウンロード処理 (CSV & シート分割Excel)
-                        col_dl1, col_dl2 = st.columns(2)
-                        with col_dl1:
-                            csv = df.to_csv(index=False).encode('utf-8-sig')
-                            st.download_button("📥 CSVダウンロード", csv, "playlist.csv", "text/csv")
-                        with col_dl2:
-                            output = BytesIO()
-                            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                                df.to_excel(writer, sheet_name='All Data', index=False)
-                                # ボーカルごとのシート作成
-                                if "合成音声" in df.columns:
-                                    unique_vocals = df['合成音声'].dropna().unique()
-                                    for vocal in unique_vocals:
-                                        if vocal and len(vocal) < 30: # シート名の長さ制限を回避
-                                            safe_vocal = re.sub(r'[\\/*?:\[\]]', '', str(vocal))
-                                            # 空文字列でなければシート作成
-                                            if safe_vocal.strip():
-                                                df[df['合成音声'] == vocal].to_excel(writer, sheet_name=safe_vocal[:31], index=False)
-                                    # 複数人歌唱シート（「/」が含まれているか判定）
-                                    multi_df = df[df['合成音声'].astype(str).str.contains('/', na=False)]
-                                    if not multi_df.empty:
-                                        multi_df.to_excel(writer, sheet_name='複数人歌唱', index=False)
-                            st.download_button("📥 Excelダウンロード (音声別シート分割版)", output.getvalue(), "playlist.xlsx")
+                    st.session_state.extracted_df = pd.DataFrame(results)
+                    
                 except Exception as e:
                     st.error(f"エラーが発生しました: {e}")
+
+    # 結果の表示とダウンロード処理 (ボタン外で状態を保持)
+    if not st.session_state.extracted_df.empty:
+        df = st.session_state.extracted_df
+        st.success(f"✅ {len(df)}曲の抽出・フィルタリングが完了しました！")
+        
+        # ワンクリックコピー用 (TSV出力)
+        st.markdown("**📋 抽出結果をコピーする (右上のアイコンをクリック)**")
+        tsv_data = df.to_csv(index=False, sep='\t')
+        st.code(tsv_data, language='markdown')
+        
+        st.dataframe(df)
+        
+        # Excelファイルの生成 (HYPERLINK適用 & 特殊横並びレイアウト)
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+            df_export = df.copy()
+            # ワンクリックで飛べるようにExcelのHYPERLINK関数に変換
+            for col in df_export.columns:
+                if "検索" in col or col == "URL":
+                    df_export[col] = df_export[col].apply(lambda x: f'=HYPERLINK("{x}", "リンクを開く")' if pd.notnull(x) and str(x).strip() != "" else "")
+            
+            df_export.to_excel(writer, sheet_name='抽出データ', index=False)
+            
+            # --- 横並び分割レイアウト ---
+            worksheet = writer.book.add_worksheet('ボーカル別横並びレイアウト')
+            writer.sheets['ボーカル別横並びレイアウト'] = worksheet
+            
+            # 指定された順序
+            vocal_order = ["初音ミク", "鏡音リン", "鏡音レン", "MEIKO", "KAITO", "GUMI", "音街ウナ"]
+            found_vocals = df['合成音声'].dropna().unique()
+            
+            # リスト外のボーカルも後ろに追加
+            extra_vocals = set()
+            for v in found_vocals:
+                for part in v.split('/'):
+                    part = part.strip()
+                    if part and part not in vocal_order: extra_vocals.add(part)
+            vocal_order.extend(list(extra_vocals))
+            
+            current_col = 0
+            gap = 5 # 列を5セル空ける
+            
+            for vocal in vocal_order:
+                vocal_df = df_export[df_export['合成音声'].str.contains(vocal, na=False, regex=False)]
+                if not vocal_df.empty:
+                    # 見出しを書き込み
+                    worksheet.write_string(0, current_col, f"【{vocal}】")
+                    # 1行目からデータを出力
+                    vocal_df.to_excel(writer, sheet_name='ボーカル別横並びレイアウト', startrow=1, startcol=current_col, index=False)
+                    current_col += len(vocal_df.columns) + gap
+
+        # ダウンロードボタン (Excel優先)
+        col_dl1, col_dl2 = st.columns(2)
+        with col_dl1:
+            st.download_button("📥 Excel (.xlsx) ダウンロード", output.getvalue(), "playlist.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+        with col_dl2:
+            csv_data = df.to_csv(index=False).encode('utf-8-sig')
+            st.download_button("📥 CSVダウンロード", csv_data, "playlist.csv", "text/csv")
 
 with tab3:
     st.header("📁 リスト一括URL補完 ＆ プレイリスト生成")
     uploaded_file = st.file_uploader("楽曲リスト (Excel/CSV) をアップロード", type=["xlsx", "csv"])
-    
     if st.button("プレイリスト作成機能は現在準備中です"):
         pass
