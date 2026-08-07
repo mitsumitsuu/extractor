@@ -82,12 +82,11 @@ def get_youtube_playlist(api_key, url):
     return videos
 
 def get_youtube_playlist_no_api(url):
-    """yt-dlpを使用してAPIキー不要でYouTubeの動画・プレイリスト情報を取得する"""
     ydl_opts = {
         'extract_flat': 'in_playlist',
         'quiet': True,
         'no_warnings': True,
-        'ignoreerrors': True, # 削除済みの動画があっても途中で止めずにスキップする
+        'ignoreerrors': True,
     }
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -96,7 +95,7 @@ def get_youtube_playlist_no_api(url):
                 raise ValueError("動画またはプレイリストの情報を取得できませんでした。")
             
             videos = []
-            if 'entries' in info: # プレイリストの場合
+            if 'entries' in info: 
                 for entry in info['entries']:
                     if entry and entry.get('id'):
                         videos.append({
@@ -104,7 +103,7 @@ def get_youtube_playlist_no_api(url):
                             "概要欄データ": entry.get('description', ''),
                             "URL": f"https://www.youtube.com/watch?v={entry.get('id')}"
                         })
-            else: # 単一の動画の場合
+            else: 
                 if info.get('id'):
                     videos.append({
                         "曲名": info.get('title', 'Unknown Title'),
@@ -163,7 +162,7 @@ def extract_text_from_image(image_file):
     return pytesseract.image_to_string(Image.open(image_file), lang='eng+jpn').strip()
 
 def search_youtube_no_api_advanced(query, ng_words_list):
-    search_url = f"ytsearch10:{query}" # yt-dlpの検索機能を使用
+    search_url = f"ytsearch10:{query}"
     ydl_opts = {
         'extract_flat': True,
         'quiet': True,
@@ -225,7 +224,7 @@ with tab1:
         """)
     
     extraction_mode = st.radio(
-        "YouTube抽出モードの選択",
+        "YouTube 抽出手法の選択",
         ["🔑 APIあり（推奨・全件高精度抽出）", "⚡ APIなし（簡易抽出）"],
         horizontal=True
     )
@@ -235,6 +234,15 @@ with tab1:
         youtube_api_key = st.text_input("🔑 YouTube API Key を入力してください", type="password")
     else:
         st.caption("※「APIなし」モードではAPIキー設定は不要です。専用パッケージを使用してリストを取得します。")
+
+    st.markdown("---")
+    
+    title_mode = st.radio(
+        "📝 曲名の出力モード",
+        ["🔹 そのまま出力（公式の題名を維持し、合成音声名などの抜け落ちを防ぐ）", 
+         "✨ スッキリ出力（【】や feat. 等を削除し、合成音声は専用列に抽出する）"],
+        horizontal=False
+    )
 
     col1, col2 = st.columns(2)
     with col1:
@@ -267,7 +275,27 @@ with tab1:
                     else:
                         raise ValueError("対応していないURLです。")
 
-                    results = [{"曲名": clean_title(item["曲名"]), "合成音声": extract_vocals(item["曲名"], item["概要欄データ"], target_keywords, ng_words), "URL": item["URL"]} for item in raw_data]
+                    results = []
+                    for item in raw_data:
+                        raw_title = item["曲名"]
+                        desc = item["概要欄データ"]
+                        url = item["URL"]
+                        
+                        # 合成音声の抽出処理
+                        extracted_vocals = extract_vocals(raw_title, desc, target_keywords, ng_words)
+                        
+                        # 曲名のモード分岐
+                        if "そのまま出力" in title_mode:
+                            final_title = raw_title
+                        else:
+                            final_title = clean_title(raw_title)
+                            
+                        results.append({
+                            "曲名": final_title,
+                            "合成音声": extracted_vocals,
+                            "URL": url
+                        })
+                        
                     df = pd.DataFrame(results)
                     
                     if df.empty:
