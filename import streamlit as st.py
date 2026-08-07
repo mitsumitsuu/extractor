@@ -71,7 +71,6 @@ def get_youtube_playlist_api(api_key, url, min_views, max_views, min_comments, m
         request = youtube.playlistItems().list(part="snippet", playlistId=match.group(1), maxResults=50, pageToken=next_page_token)
         response = request.execute()
         
-        # 統計情報を取得するためのIDリスト作成
         video_ids = [item["snippet"]["resourceId"]["videoId"] for item in response.get("items", []) if item["snippet"]["title"] not in ["Private video", "Deleted video"]]
         
         if not video_ids: break
@@ -156,7 +155,14 @@ with tab1:
         exclude_words = st.text_area("除外する楽曲タイトル・ワード (改行区切り)")
         exclude_list = [w.strip() for w in exclude_words.split('\n') if w.strip()]
         
-        link_options = st.radio("追加するリンク", ["すべて追加 (歌詞・考察・BPM)", "歌詞のみ", "考察のみ", "追加しない"], horizontal=True)
+        st.markdown("**🔗 追加する検索リンク (複数選択可)**")
+        col_l1, col_l2, col_l3 = st.columns(3)
+        with col_l1:
+            add_lyrics = st.checkbox("📝 歌詞サイト検索", value=True)
+        with col_l2:
+            add_meaning = st.checkbox("🤔 考察サイト検索", value=False)
+        with col_l3:
+            add_bpm = st.checkbox("🎛️ BPM・キー検索", value=False)
 
     playlist_url = st.text_input("URLを入力 (YouTube / SoundCloud)")
 
@@ -164,7 +170,7 @@ with tab1:
         if not playlist_url:
             st.warning("URLを入力してください。")
         else:
-            with st.spinner("データを抽出中... (多人数同時アクセスの場合はサーバーが重くなる可能性があります)"):
+            with st.spinner("データを抽出中..."):
                 try:
                     raw_data = []
                     if "統計" in mode:
@@ -178,24 +184,23 @@ with tab1:
                         desc = item["概要欄データ"]
                         url = item["URL"]
                         
-                        # 除外ワード判定
                         if any(ex in raw_title for ex in exclude_list):
                             continue
                             
-                        # AIモード判定
                         if "AI" in mode and gemini_key:
                             clean_t, vocals = extract_vocals_ai(gemini_key, f"{raw_title}\n{desc}")
                         else:
-                            clean_t = raw_title # 通常処理（簡易化）
+                            clean_t = raw_title
                             vocals = "手動抽出モード"
                             
                         row = {"曲名": clean_t, "合成音声": vocals, "URL": url}
                         
-                        if "歌詞" in link_options or "すべて" in link_options:
+                        # チェックボックスの状態に応じて列を追加
+                        if add_lyrics:
                             row["歌詞検索"] = f"https://www.google.com/search?q={urllib.parse.quote(clean_t)}+歌詞"
-                        if "考察" in link_options or "すべて" in link_options:
+                        if add_meaning:
                             row["考察検索"] = f"https://www.google.com/search?q={urllib.parse.quote(clean_t)}+考察"
-                        if "すべて" in link_options:
+                        if add_bpm:
                             row["BPM・キー検索"] = f"https://www.google.com/search?q={urllib.parse.quote(clean_t)}+BPM+Key"
                             
                         results.append(row)
@@ -207,7 +212,6 @@ with tab1:
                         st.success(f"✅ {len(df)}曲を抽出しました！")
                         st.dataframe(df)
                         
-                        # ダウンロード処理 (CSV & シート分割Excel)
                         col_dl1, col_dl2 = st.columns(2)
                         with col_dl1:
                             csv = df.to_csv(index=False).encode('utf-8-sig')
@@ -216,14 +220,12 @@ with tab1:
                             output = BytesIO()
                             with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
                                 df.to_excel(writer, sheet_name='All Data', index=False)
-                                # ボーカルごとのシート作成
                                 if "合成音声" in df.columns:
                                     unique_vocals = df['合成音声'].dropna().unique()
                                     for vocal in unique_vocals:
-                                        if vocal and len(vocal) < 30: # シート名長さ制限回避
+                                        if vocal and len(vocal) < 30:
                                             safe_vocal = re.sub(r'[\\/*?:\[\]]', '', vocal)
                                             df[df['合成音声'] == vocal].to_excel(writer, sheet_name=safe_vocal[:31], index=False)
-                                    # 複数人歌唱シート
                                     multi_df = df[df['合成音声'].str.contains('/', na=False)]
                                     if not multi_df.empty:
                                         multi_df.to_excel(writer, sheet_name='複数人歌唱', index=False)
@@ -239,7 +241,6 @@ with tab3:
         if uploaded_file:
             with st.spinner("URLを検索・補完中..."):
                 df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith('.csv') else pd.read_excel(uploaded_file)
-                # (※文字数制限のため、ここには前回の検索ロジックが入ります。検索語のdfにURL列を追加して出力する処理を実行します)
                 st.success("✅ 補完完了しました！")
                 csv = df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 URL補完済みCSVをダウンロード", csv, "updated_list.csv", "text/csv")
