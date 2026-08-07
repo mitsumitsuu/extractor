@@ -585,5 +585,5 @@ for i, tab in enumerate(preset_tabs):
             
             # 高さをデータ行数から自動計算して全件表示（スクロールバーを消す）
             # 1行あたり約35px + ヘッダー分で計算
-            total_height = (len(saved_df) * 35) + 40
+            total_height = (len(saved_df) * 35) + 20
             st.dataframe(saved_df, height=total_height, use_container_width=True)
