@@ -9,6 +9,7 @@ from googleapiclient.discovery import build
 from io import BytesIO
 import pytesseract
 from PIL import Image
+import yt_dlp
 
 # ==========================================
 # 1. 初期設定とデフォルト辞書
@@ -81,86 +82,41 @@ def get_youtube_playlist(api_key, url):
     return videos
 
 def get_youtube_playlist_no_api(url):
-    match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
-    if match:
-        playlist_id = match.group(1)
-        clean_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        # ヘッダー情報を充実させて、YouTube側に一般的なブラウザからのアクセスだと認識させる
-        req = urllib.request.Request(clean_url, headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
-        })
-        try:
-            with urllib.request.urlopen(req) as response:
-                html = response.read().decode('utf-8')
-                
-                # ytInitialDataの表記揺れ（varやwindow[]など）を柔軟に捉える正規表現
-                match_data = re.search(r"ytInitialData\s*=\s*(\{.+?\});", html)
-                if not match_data:
-                    raise ValueError("プレイリストデータの構造が通常と異なります。非公開リストであるか、YouTubeの仕様が変更された可能性があります。")
-                
-                data = json.loads(match_data.group(1))
-                videos = []
-                
-                def find_playlist_videos(node):
-                    if isinstance(node, list):
-                        for i in node:
-                            for x in find_playlist_videos(i): yield x
-                    elif isinstance(node, dict):
-                        # YouTubeが使用する複数のRenderer（箱）名に対応
-                        if 'playlistVideoRenderer' in node: yield node['playlistVideoRenderer']
-                        elif 'playlistPanelVideoRenderer' in node: yield node['playlistPanelVideoRenderer']
-                        elif 'compactVideoRenderer' in node: yield node['compactVideoRenderer']
-                        for j in node.values():
-                            for x in find_playlist_videos(j): yield x
-                
-                for item in find_playlist_videos(data):
-                    vid = item.get('videoId')
-                    title = ""
-                    # タイトルの構造揺れに対応
-                    if 'title' in item and 'runs' in item['title']:
-                        title = "".join([run.get('text', '') for run in item['title']['runs']])
-                    elif 'title' in item and 'simpleText' in item['title']:
-                        title = item['title']['simpleText']
-                        
-                    desc = ""
-                    if 'descriptionSnippet' in item and 'runs' in item['descriptionSnippet']:
-                        desc = "".join([run.get('text', '') for run in item['descriptionSnippet']['runs']])
-                        
-                    if vid and title:
+    """yt-dlpを使用してAPIキー不要でYouTubeの動画・プレイリスト情報を取得する"""
+    ydl_opts = {
+        'extract_flat': 'in_playlist',
+        'quiet': True,
+        'no_warnings': True,
+        'ignoreerrors': True, # 削除済みの動画があっても途中で止めずにスキップする
+    }
+    try:
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=False)
+            if not info:
+                raise ValueError("動画またはプレイリストの情報を取得できませんでした。")
+            
+            videos = []
+            if 'entries' in info: # プレイリストの場合
+                for entry in info['entries']:
+                    if entry and entry.get('id'):
                         videos.append({
-                            "曲名": title,
-                            "概要欄データ": desc,
-                            "URL": f"https://www.youtube.com/watch?v={vid}"
+                            "曲名": entry.get('title', 'Unknown Title'),
+                            "概要欄データ": entry.get('description', ''),
+                            "URL": f"https://www.youtube.com/watch?v={entry.get('id')}"
                         })
-                
-                # 重複を排除してリスト化
-                unique_videos = []
-                seen = set()
-                for v in videos:
-                    if v['URL'] not in seen:
-                        seen.add(v['URL'])
-                        unique_videos.append(v)
-                        
-                if not unique_videos:
-                    raise ValueError("プレイリスト内に動画が見つかりませんでした。")
-                return unique_videos
-        except Exception as e:
-            raise ValueError(f"{e}")
-    else:
-        vid = extract_youtube_id(url)
-        if vid:
-            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0", "Accept-Language": "ja-JP,ja;q=0.9"})
-            try:
-                with urllib.request.urlopen(req) as response:
-                    html = response.read().decode('utf-8')
-                    match_title = re.search(r"<title>(.*?)</title>", html)
-                    title = match_title.group(1).replace(" - YouTube", "") if match_title else "YouTube Video"
-                    return [{"曲名": title, "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
-            except Exception:
-                return [{"曲名": "YouTube Video", "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
-        else:
-            raise ValueError("有効なYouTube URLが見つかりませんでした。")
+            else: # 単一の動画の場合
+                if info.get('id'):
+                    videos.append({
+                        "曲名": info.get('title', 'Unknown Title'),
+                        "概要欄データ": info.get('description', ''),
+                        "URL": f"https://www.youtube.com/watch?v={info.get('id')}"
+                    })
+            
+            if not videos:
+                raise ValueError("有効な動画が見つかりませんでした。（非公開設定の可能性があります）")
+            return videos
+    except Exception as e:
+        raise ValueError(f"取得ツール(yt-dlp)での解析に失敗しました: {e}")
 
 def get_niconico_playlist(url):
     match = re.search(r"mylist/(\d+)", url)
@@ -207,43 +163,30 @@ def extract_text_from_image(image_file):
     return pytesseract.image_to_string(Image.open(image_file), lang='eng+jpn').strip()
 
 def search_youtube_no_api_advanced(query, ng_words_list):
-    search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
-    req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+    search_url = f"ytsearch10:{query}" # yt-dlpの検索機能を使用
+    ydl_opts = {
+        'extract_flat': True,
+        'quiet': True,
+        'no_warnings': True,
+    }
     try:
-        with urllib.request.urlopen(req) as response:
-            html = response.read().decode('utf-8')
-            match = re.search(r"ytInitialData\s*=\s*(\{.+?\});", html)
-            if not match: return None
-            data = json.loads(match.group(1))
-
-            def find_videos(node):
-                if isinstance(node, list):
-                    for i in node:
-                        for x in find_videos(i): yield x
-                elif isinstance(node, dict):
-                    if 'videoRenderer' in node: yield node['videoRenderer']
-                    for j in node.values():
-                        for x in find_videos(j): yield x
-
-            for video in find_videos(data):
-                vid = video.get('videoId')
-                title = "".join([run.get('text', '') for run in video.get('title', {}).get('runs', [])])
-                length_text = video.get('lengthText', {}).get('simpleText', '')
-                
-                if not vid or not length_text: continue
-
-                parts = length_text.split(':')
-                sec = 0
-                if len(parts) == 2: sec = int(parts[0]) * 60 + int(parts[1])
-                elif len(parts) == 3: sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
-                
-                if sec < 80 or sec > 420: continue
-                
-                title_lower = title.lower()
-                is_ng = any(ng.lower() in title_lower for ng in ng_words_list)
-                if is_ng: continue
-                
-                return vid
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(search_url, download=False)
+            if 'entries' in info:
+                for entry in info['entries']:
+                    title = entry.get('title', '')
+                    duration = entry.get('duration', 0)
+                    vid = entry.get('id')
+                    
+                    if not vid or duration < 80 or duration > 420:
+                        continue
+                    
+                    title_lower = title.lower()
+                    is_ng = any(ng.lower() in title_lower for ng in ng_words_list)
+                    if is_ng:
+                        continue
+                    
+                    return vid
     except Exception:
         pass
     return None
@@ -283,7 +226,7 @@ with tab1:
     
     extraction_mode = st.radio(
         "YouTube抽出モードの選択",
-        ["🔑 APIあり（推奨・全件高精度抽出）", "⚡ APIなし（簡易抽出・100曲程度まで）"],
+        ["🔑 APIあり（推奨・全件高精度抽出）", "⚡ APIなし（簡易抽出）"],
         horizontal=True
     )
     
@@ -291,7 +234,7 @@ with tab1:
     if "APIあり" in extraction_mode:
         youtube_api_key = st.text_input("🔑 YouTube API Key を入力してください", type="password")
     else:
-        st.caption("※「APIなし」モードでは、APIキーの設定は不要ですが、取得上限が100曲程度に制限され、概要欄データの判定精度が低くなる場合があります。")
+        st.caption("※「APIなし」モードではAPIキー設定は不要です。専用パッケージを使用してリストを取得します。")
 
     col1, col2 = st.columns(2)
     with col1:
@@ -337,7 +280,7 @@ with tab1:
                             df.to_excel(writer, index=False, sheet_name='Playlist Data')
                         st.download_button("📥 Excelファイルとしてダウンロード", data=output.getvalue(), file_name="playlist_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
                 except Exception as e:
-                    st.error(f"❌ エラーが発生しました: APIなしでの取得に失敗しました: {e}")
+                    st.error(f"❌ エラーが発生しました: {e}")
 
 # --- タブ2: 画像認識 (OCR) & VocaDB検索 ---
 with tab2:
