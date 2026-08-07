@@ -178,7 +178,6 @@ with st.sidebar:
             if st.button("ログイン"):
                 if login_user(u_name, u_pass):
                     st.session_state.logged_in_user = u_name
-                    # DBから読み込み
                     loaded = load_presets_from_db(u_name)
                     for pid, p_data in loaded.items():
                         st.session_state.presets[pid].update(p_data)
@@ -198,7 +197,6 @@ with col_link:
 # 4. データ処理・解析関数
 # ==========================================
 def parse_flexible_input(text):
-    """改行、カンマ、全角カンマ、スペースなどあらゆる区切りに対応"""
     if not text: return []
     return [w.strip() for w in re.split(r'[,\n\s、]+', text) if w.strip()]
 
@@ -302,9 +300,7 @@ def get_playlist_ytdlp(url):
         raise ValueError(f"解析失敗: {e}")
 
 def create_advanced_excel(df):
-    """Excel専用の高度なフォーマット。TypeError対策済み。"""
     output = BytesIO()
-    # 最新版Pandas互換のエンジンオプション指定
     with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, sheet_name='一括データ', index=False)
         
@@ -360,7 +356,6 @@ for i, tab in enumerate(preset_tabs):
     with tab:
         p = st.session_state.presets[pid]
         
-        # 安全な警告UIの実装 (エラーの原因となっていたdialogを排除)
         col_btn1, col_btn2 = st.columns([2, 7])
         with col_btn1:
             if st.button(f"🔄 プリセット{pid}を初期化", key=f"req_reset_{pid}"):
@@ -383,13 +378,11 @@ for i, tab in enumerate(preset_tabs):
                     st.session_state[f"show_warn_{pid}"] = False
                     st.rerun()
             with cw3:
-                # サイドバーの設定と連動
                 if st.checkbox("次回からこの警告を表示しない", key=f"check_warn_{pid}"):
                     st.session_state.hide_warning_forever = True
                     if st.session_state.logged_in_user:
                         save_setting_to_db(st.session_state.logged_in_user, True)
 
-        # UI構築
         p["mode"] = st.radio("抽出・解析モード", ["⚡ 高速モード (yt-dlp使用 / API不要)", "📊 統計フィルターモード (YouTube API使用)", "✨ AI完璧抽出モード (Gemini API使用 / 精度100%)"], index=["⚡ 高速モード (yt-dlp使用 / API不要)", "📊 統計フィルターモード (YouTube API使用)", "✨ AI完璧抽出モード (Gemini API使用 / 精度100%)"].index(p["mode"]), horizontal=True, key=f"mode_{pid}")
         p["title_mode"] = st.radio("曲名の出力モード", ["🔹 そのまま出力", "✨ スッキリ出力"], index=0 if p["title_mode"] == "🔹 そのまま出力" else 1, horizontal=True, key=f"tmode_{pid}")
         
@@ -415,7 +408,7 @@ for i, tab in enumerate(preset_tabs):
             
             st.markdown("**【追加リンク】**")
             cl1, cl2, cl3, cl4 = st.columns(4)
-            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク", value=p["add_lyrics"], key=f"al_{pid}")
+            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイト直リンク", value=p["add_lyrics"], key=f"al_{pid}")
             with cl2: p["add_analysis"] = st.checkbox("🤔 考察検索リンク", value=p["add_analysis"], key=f"aa_{pid}")
             with cl3: p["add_bpm"] = st.checkbox("🎛️ BPM・Keyリンク", value=p["add_bpm"], key=f"ab_{pid}")
             with cl4: p["add_copyright"] = st.checkbox("©️ JASRAC/NexTone検索", value=p.get("add_copyright", True), key=f"ac_{pid}")
@@ -428,7 +421,6 @@ for i, tab in enumerate(preset_tabs):
             else:
                 with st.spinner(f"プリセット {pid} で解析を実行中..."):
                     try:
-                        # 柔軟な入力解析
                         ex_list = parse_flexible_input(p["exclude_words"])
                         tv_list = parse_flexible_input(p["target_vocal"])
                         kw_list = [k.strip() for k in DEFAULT_KEYWORDS.split(',')]
@@ -463,8 +455,8 @@ for i, tab in enumerate(preset_tabs):
                             
                             row = {"曲名": clean_t, "合成音声": vocals, "URL": f'=HYPERLINK("{url}", "{url}")'}
                             
-                            # Uta-Netや初音ミクwikiなどを優先して検索
-                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+歌詞+(site:uta-net.com+OR+site:w.atwiki.jp/hmiku)", "歌詞サイトを検索")'
+                            # 歌詞サイト直リンク化 (Uta-Netの検索結果ページへ直行)
+                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.uta-net.com/search/?keyword={encoded}&type=in", "Uta-Netで直接検索")'
                             if p["add_analysis"]: row["考察検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+考察", "考察を検索")'
                             if p["add_bpm"]: row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
                             if p["add_copyright"]:
@@ -503,7 +495,28 @@ for i, tab in enumerate(preset_tabs):
                 csv = csv_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
             
-            with st.expander("📋 ワンクリックで表データをコピーする（右上のボタンをクリック）"):
-                st.code(csv_df.to_csv(index=False, sep='\t'), language='csv')
+            # 目立つ独自のコピーボタンをHTMLで生成
+            copy_html = f"""
+            <script>
+            function copyTable() {{
+                const text = `{csv_df.to_csv(index=False, sep='\\t').replace('`', '\\`')}`;
+                navigator.clipboard.writeText(text).then(function() {{
+                    const btn = document.getElementById('copy-btn');
+                    btn.innerText = '✅ コピー完了！';
+                    btn.style.backgroundColor = '#45a049';
+                    setTimeout(() => {{
+                        btn.innerText = '📋 表データをコピー';
+                        btn.style.backgroundColor = '#4CAF50';
+                    }}, 2000);
+                }});
+            }}
+            </script>
+            <button id="copy-btn" onclick="copyTable()" style="
+                padding: 10px 20px; font-size: 16px; font-weight: bold; cursor: pointer;
+                background-color: #4CAF50; color: white; border: none; border-radius: 5px;
+                box-shadow: 0 4px 6px rgba(0,0,0,0.1); transition: 0.3s;
+            ">📋 表データをコピー</button>
+            """
+            components.html(copy_html, height=50)
             
             st.dataframe(saved_df)
