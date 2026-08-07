@@ -5,3 +5,4 @@ xlsxwriter
 requests
 starlette<0.38.0
 openpyxl
+yt-dlp
