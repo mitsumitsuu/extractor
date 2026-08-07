@@ -161,11 +161,18 @@ def search_youtube_no_api_advanced(query, ng_words_list):
     return None
 
 def extract_youtube_id(url_text):
-    """テキスト内からYouTubeの11桁の動画IDを抽出する"""
     url_str = str(url_text)
-    # v=, youtu.be/, shorts/, live/, embed/ などの形式に幅広く対応
     match = re.search(r"(?:v=|youtu\.be/|shorts/|live/|embed/)([a-zA-Z0-9_-]{11})", url_str)
     if match: return match.group(1)
+    return None
+
+def extract_any_url(row_data):
+    """行データの中から何らかのURL（httpから始まる文字列）を探し出す"""
+    for item in row_data:
+        cell_str = str(item)
+        match = re.search(r"(https?://[^\s]+)", cell_str)
+        if match:
+            return match.group(1)
     return None
 
 # ==========================================
@@ -238,7 +245,7 @@ with tab2:
 # --- タブ3: Excelからプレイリスト生成 (API不要版) ---
 with tab3:
     st.header("📁 Excelからプレイリスト生成 (API不要版)")
-    st.markdown("アップロードしたExcelファイルのURLリストから、即席のYouTubeプレイリストURLを生成します。")
+    st.markdown("アップロードしたExcelファイルのURLリストから、即席のYouTubeプレイリストURLを生成します。\n\n※YouTube以外のリンク（ニコニコ動画など）が含まれている場合は、下に個別のアクセスリンクとしてまとめられます。")
     
     strict_mode = st.checkbox("✅ 完全一致モード（列名に関わらず、YouTubeのURLが入力されている楽曲のみを抽出し、曖昧な検索補完を行わない）", value=True)
     
@@ -253,6 +260,7 @@ with tab3:
                 try:
                     df = pd.read_excel(uploaded_excel)
                     video_ids = []
+                    other_platforms = []  # YouTube以外のリンクを格納するリスト
                     skipped_count = 0
                     searched_warnings = []
                     
@@ -261,24 +269,24 @@ with tab3:
                     
                     for index, row in df.iterrows():
                         vid = None
+                        found_url = extract_any_url(row.values)
                         track_number = index + 1
                         col_name = "曲名" if "曲名" in df.columns else (df.columns[0] if len(df.columns) > 0 else "不明")
                         song_title = str(row.get(col_name, f"不明な曲（{track_number}行目）"))
                         
-                        # ① 列名に関わらず、その行のすべてのセルをチェックしてYouTubeのIDを探す
-                        for col in df.columns:
-                            cell_value = str(row[col])
-                            extracted_id = extract_youtube_id(cell_value)
-                            if extracted_id:
-                                vid = extracted_id
-                                break # 見つかったらそれ以上探さない
+                        if found_url:
+                            vid = extract_youtube_id(found_url)
+                            # YouTubeのリンクではなかった場合、別プラットフォーム用リストに追加
+                            if not vid:
+                                other_platforms.append({"title": song_title, "url": found_url})
                         
                         # ② YouTube IDが無く、かつ「完全一致モード」がオフの場合のみ検索を行う
                         if not vid:
                             if strict_mode:
-                                skipped_count += 1
+                                if not found_url: # URL自体がない完全な空欄の場合のみスキップカウント
+                                    skipped_count += 1
                             else:
-                                if song_title and song_title != "nan":
+                                if song_title and song_title != "nan" and not found_url:
                                     vid = search_youtube_no_api_advanced(song_title, pl_ng_words)
                                     if vid:
                                         searched_warnings.append(f"・{track_number}曲目：{song_title}")
@@ -290,11 +298,12 @@ with tab3:
                             
                         progress_bar.progress((index + 1) / total_rows)
                             
+                    # --- YouTubeプレイリストの出力 ---
                     if video_ids:
-                        st.success(f"✅ {len(video_ids)}曲の動画データを結合しました！")
+                        st.success(f"✅ {len(video_ids)}曲のYouTube動画データを結合しました！")
                         
                         if skipped_count > 0:
-                            st.info(f"ℹ️ YouTubeのURLが含まれていない等の理由により、{skipped_count}曲をスキップしました。")
+                            st.info(f"ℹ️ URLが記載されていない等の理由により、{skipped_count}曲をスキップしました。")
                         
                         if searched_warnings:
                             st.warning("⚠️ 以下の楽曲はURLリンクが無かったため、タイトル検索で自動補完しました。")
@@ -302,7 +311,6 @@ with tab3:
                                 for warning in searched_warnings:
                                     st.write(warning)
                         
-                        # 50曲ずつに分割して出力
                         chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
                         
                         for idx, chunk in enumerate(chunked_ids):
@@ -310,7 +318,18 @@ with tab3:
                             st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
                             st.code(playlist_url)
                     else:
-                        st.error("有効なYouTube動画リンクが一つも見つかりませんでした。ファイル内にYouTubeのURLが直接記載されているか確認してください。")
+                        st.error("有効なYouTube動画リンクが一つも見つかりませんでした。")
+                    
+                    # --- その他のプラットフォームのリンク出力 ---
+                    if other_platforms:
+                        st.markdown("---")
+                        st.subheader("🌐 その他のプラットフォームの楽曲")
+                        st.markdown("ニコニコ動画やSoundCloudなど、YouTube以外のリンクが設定されていた楽曲です。以下のボタンから直接サイトへアクセスできます。")
+                        
+                        for item in other_platforms:
+                            # Streamlitの機能で、別タブで開くリンクを生成
+                            st.markdown(f"- **{item['title']}** : [リンクを開く]({item['url']})")
+                            
                 except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
         else:
