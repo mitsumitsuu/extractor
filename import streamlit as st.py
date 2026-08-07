@@ -74,9 +74,9 @@ def load_setting_from_db(username):
 # ==========================================
 # 1. UIカスタマイズ＆JavaScript強制注入
 # ==========================================
-st.set_page_config(page_title="楽曲抽出＆特定システム Ultimate", layout="wide")
+st.set_page_config(page_title="楽曲抽出＆特定システム Ultimate", layout="wide", initial_sidebar_state="collapsed")
 
-# 上部の謎の空白や不要な要素を完全に削除し、スッキリさせるCSS
+# 謎の空白削減 ＆ プリセット名（タブ）の追従（Sticky）設定
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -84,8 +84,24 @@ footer {visibility: hidden;}
 header {visibility: hidden;}
 .st-emotion-cache-1wbqy5l {display: none;}
 .block-container {
-    padding-top: 1.5rem !important;
+    padding-top: 1rem !important;
     padding-bottom: 2rem !important;
+}
+/* タブの追従 (Sticky) */
+div[data-testid="stTabs"] > div:first-of-type {
+    position: sticky;
+    top: 0px;
+    z-index: 999;
+    background-color: #ffffff;
+    padding-top: 10px;
+    padding-bottom: 5px;
+    border-bottom: 1px solid #ddd;
+}
+@media (prefers-color-scheme: dark) {
+    div[data-testid="stTabs"] > div:first-of-type {
+        background-color: #0e1117;
+        border-bottom: 1px solid #333;
+    }
 }
 </style>
 """
@@ -95,6 +111,7 @@ js_code = """
 <script>
 const doc = window.parent.document;
 doc.addEventListener('keydown', function(e) {
+    // 1. Enterキーでのフォーカス移動
     if (e.key === 'Enter') {
         const active = doc.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
@@ -106,7 +123,38 @@ doc.addEventListener('keydown', function(e) {
             }
         }
     }
+    
+    // 2. プリセット移動 (Ctrl + Tab または Alt + 右/左矢印)
+    const isCtrlTab = e.ctrlKey && e.key === 'Tab';
+    const isAltArrow = e.altKey && (e.key === 'ArrowRight' || e.key === 'ArrowLeft');
+    
+    if (isCtrlTab || isAltArrow) {
+        e.preventDefault();
+        const tabs = Array.from(doc.querySelectorAll('button[data-baseweb="tab"]'));
+        let activeIdx = tabs.findIndex(t => t.getAttribute('aria-selected') === 'true');
+        if (activeIdx > -1) {
+            let nextIdx;
+            if (e.shiftKey || e.key === 'ArrowLeft') {
+                nextIdx = (activeIdx - 1 + tabs.length) % tabs.length;
+            } else {
+                nextIdx = (activeIdx + 1) % tabs.length;
+            }
+            tabs[nextIdx].click();
+        }
+    }
+    
+    // 3. プリセット初期化 (Ctrl + Shift + R)
+    if (e.ctrlKey && e.shiftKey && (e.key === 'r' || e.key === 'R')) {
+        e.preventDefault();
+        const activeTabPanel = doc.querySelector('div[data-baseweb="tab-panel"][aria-hidden="false"]');
+        if (activeTabPanel) {
+            const resetBtn = Array.from(activeTabPanel.querySelectorAll('button')).find(b => b.innerText.includes('🔄 プリセット'));
+            if (resetBtn) resetBtn.click();
+        }
+    }
 });
+
+// オートコンプリートの無効化
 setInterval(() => {
     doc.querySelectorAll('input').forEach(el => {
         el.setAttribute('autocomplete', 'new-password');
@@ -147,51 +195,69 @@ if "results" not in st.session_state:
     st.session_state.results = {i: None for i in range(1, 11)}
 
 # ==========================================
-# 3. 上部ヘッダー（アカウント設定のポップオーバー化）
+# 3. 上部ヘッダー（レスポンシブ対応＆お問い合わせ移動）
 # ==========================================
-col_title, col_link, col_auth = st.columns([6, 1.5, 2.5])
+col_title, col_link, col_contact, col_auth = st.columns([5, 1.5, 1.5, 2.5])
 
 with col_title:
     st.title("🎶 楽曲抽出システム Ultimate")
 
 with col_link:
-    st.markdown("<div style='margin-top: 25px;'><a href='https://lit.link/_mitsu_3_' target='_blank'>👤 制作者のlit.link</a></div>", unsafe_allow_html=True)
+    st.markdown("<div style='margin-top: 15px;'><a href='https://lit.link/_mitsu_3_' target='_blank'>👤 制作者のlit.link</a></div>", unsafe_allow_html=True)
+
+with col_contact:
+    st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+    with st.popover("✉️ お問い合わせ"):
+        st.markdown("**バグ報告 / ご要望**")
+        with st.form("contact_form"):
+            subject_input = st.text_input("件名", placeholder="例：APIエラーについて")
+            body_input = st.text_area("内容", placeholder="発生した問題やご要望をご記入ください。", height=100)
+            submitted = st.form_submit_button("管理者に送信")
+            if submitted:
+                if subject_input and body_input:
+                    try:
+                        res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input, "_subject": f"【楽曲抽出】{subject_input}"})
+                        if res.status_code == 200:
+                            st.success("✅ 送信完了！")
+                        else:
+                            st.error("送信失敗。")
+                    except:
+                        st.error("通信エラー。")
+                else:
+                    st.warning("両方入力してください。")
 
 with col_auth:
-    st.markdown("<div style='margin-top: 15px;'></div>", unsafe_allow_html=True)
-    with st.popover("⚙️ アカウント設定 / ログイン"):
+    st.markdown("<div style='margin-top: 5px;'></div>", unsafe_allow_html=True)
+    with st.popover("⚙️ アカウント設定"):
         if st.session_state.logged_in_user:
-            st.success(f"ログイン中: {st.session_state.logged_in_user}")
-            if st.button("ログアウト"):
+            st.success(f"👤 {st.session_state.logged_in_user}")
+            if st.button("ログアウト", use_container_width=True):
                 st.session_state.logged_in_user = None
                 st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
                 st.rerun()
                 
             st.markdown("---")
-            st.subheader("全体設定")
             current_hide_setting = load_setting_from_db(st.session_state.logged_in_user)
-            new_hide_setting = st.checkbox("初期化時の警告を非表示にする", value=current_hide_setting)
+            new_hide_setting = st.checkbox("初期化時の警告を隠す", value=current_hide_setting)
             if current_hide_setting != new_hide_setting:
                 save_setting_to_db(st.session_state.logged_in_user, new_hide_setting)
                 st.session_state.hide_warning_forever = new_hide_setting
                 st.rerun()
                 
-            if st.button("💾 現在の全プリセットをDBに保存"):
+            if st.button("💾 全プリセットを保存", use_container_width=True):
                 for pid, p_data in st.session_state.presets.items():
                     save_preset_to_db(st.session_state.logged_in_user, pid, p_data)
-                st.success("データベースに保存しました！")
+                st.success("保存完了！")
         else:
             log_mode = st.radio("メニュー", ["ログイン", "新規登録"], horizontal=True)
             u_name = st.text_input("ユーザー名")
             u_pass = st.text_input("パスワード", type="password")
             if log_mode == "新規登録":
-                if st.button("登録"):
-                    if register_user(u_name, u_pass):
-                        st.success("登録完了！ログインしてください。")
-                    else:
-                        st.error("そのユーザー名は既に使用されています。")
+                if st.button("登録", use_container_width=True):
+                    if register_user(u_name, u_pass): st.success("登録完了！")
+                    else: st.error("既に使用されています。")
             else:
-                if st.button("ログイン"):
+                if st.button("ログイン", use_container_width=True):
                     if login_user(u_name, u_pass):
                         st.session_state.logged_in_user = u_name
                         loaded = load_presets_from_db(u_name)
@@ -200,10 +266,23 @@ with col_auth:
                         st.session_state.hide_warning_forever = load_setting_from_db(u_name)
                         st.rerun()
                     else:
-                        st.error("ユーザー名かパスワードが違います。")
+                        st.error("情報が違います。")
 
 # ==========================================
-# 4. データ処理・解析関数
+# 4. ガイドとショートカット説明
+# ==========================================
+with st.expander("📖 詳しい使い方とショートカットキー"):
+    st.markdown("""
+    **【ショートカットキー (PC向け)】**
+    *   **`Ctrl` + `Tab`** : 右のプリセットへ移動
+    *   **`Ctrl` + `Shift` + `Tab`** : 左のプリセットへ移動
+        *(※ブラウザの設定で効かない場合は、**`Alt` + `▶(右矢印)`** / **`Alt` + `◀(左矢印)`** をご使用ください)*
+    *   **`Ctrl` + `Shift` + `R`** : 現在のプリセット設定を初期化する
+    *   **`Enter`** : 次の入力項目へ移動
+    """)
+
+# ==========================================
+# 5. データ処理・解析関数
 # ==========================================
 def parse_flexible_input(text):
     if not text: return []
@@ -301,30 +380,24 @@ def create_advanced_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, sheet_name='一括データ', index=False)
-        
         if "合成音声" in df.columns:
             unique_vocals = set()
             for v in df['合成音声'].dropna():
                 for part in str(v).split('/'):
                     if part.strip() and part.strip() != "手動抽出モード": unique_vocals.add(part.strip())
-            
             for vocal in unique_vocals:
                 safe_vocal = re.sub(r'[\\/*?:\[\]]', '', vocal)[:31]
                 sub_df = df[df['合成音声'].astype(str).str.contains(vocal, na=False, regex=False)]
                 if not sub_df.empty and safe_vocal:
                     sub_df.to_excel(writer, sheet_name=safe_vocal, index=False)
-                    
             multi_df = df[df['合成音声'].astype(str).str.contains('/', na=False)]
             if not multi_df.empty:
                 multi_df.to_excel(writer, sheet_name='複数人歌唱', index=False)
-                
             vocs_order = ["初音ミク", "鏡音リン", "鏡音レン", "MEIKO", "KAITO", "GUMI", "音街ウナ", "可不", "星界", "重音テト"]
             vocs_order += [v for v in unique_vocals if v not in vocs_order]
-            
             wb = writer.book
             ws = wb.add_worksheet('ボーカル横並び配置')
             header_fmt = wb.add_format({'bold': True, 'bg_color': '#D3D3D3'})
-            
             col_offset = 0
             for vocal in vocs_order:
                 sub_df = df[df['合成音声'].astype(str).str.contains(vocal, na=False, regex=False)]
@@ -339,7 +412,7 @@ def create_advanced_excel(df):
     return output.getvalue()
 
 # ==========================================
-# 5. プリセットタブの描画ループ
+# 6. プリセットタブの描画ループ
 # ==========================================
 preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)])
 
@@ -474,15 +547,22 @@ for i, tab in enumerate(preset_tabs):
         if saved_df is not None and not saved_df.empty:
             st.success(f"✅ {len(saved_df)}曲の抽出結果 (プリセット {pid})")
             
-            # alert()ポップアップを出さずにボタン自身の色・文字を変更するスマートコピーボタン
-            csv_df = saved_df.copy()
-            for col in csv_df.columns:
-                if csv_df[col].dtype == object:
-                    csv_df[col] = csv_df[col].apply(lambda x: re.search(r'"(https?://.*?)"', str(x)).group(1) if '=HYPERLINK' in str(x) else x)
+            c_dl1, c_dl2 = st.columns(2)
+            with c_dl1:
+                excel_data = create_advanced_excel(saved_df)
+                st.download_button("📥 XLSXダウンロード", excel_data, f"playlist_p{pid}.xlsx")
+            with c_dl2:
+                csv_df = saved_df.copy()
+                for col in csv_df.columns:
+                    if csv_df[col].dtype == object:
+                        csv_df[col] = csv_df[col].apply(lambda x: re.search(r'"(https?://.*?)"', str(x)).group(1) if '=HYPERLINK' in str(x) else x)
+                csv = csv_df.to_csv(index=False).encode('utf-8-sig')
+                st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
             
+            # JavaScriptによる2秒タイマー付きのスマートコピーボタン
             b64_csv = base64.b64encode(csv_df.to_csv(index=False, sep='\t').encode('utf-8')).decode('utf-8')
             copy_html = f"""
-            <button id="copyBtn{pid}" onclick="copyData{pid}()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 10px;">
+            <button id="copyBtn{pid}" onclick="copyData{pid}()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 5px;">
                 📋 表データをクリップボードにコピー
             </button>
             <script>
@@ -492,44 +572,18 @@ for i, tab in enumerate(preset_tabs):
                 navigator.clipboard.writeText(str).then(function() {{
                     btn.innerHTML = "✅ コピーしました！";
                     btn.style.backgroundColor = "#1b5e20";
+                    // 正確に2000ミリ秒(2秒)後に元の状態に戻す
                     setTimeout(function() {{
                         btn.innerHTML = "📋 表データをクリップボードにコピー";
                         btn.style.backgroundColor = "#2e7d32";
-                    }}, 2500);
+                    }}, 2000);
                 }});
             }}
             </script>
             """
             components.html(copy_html, height=50)
             
-            # 元の高さ制限なしの表（全件表示）に戻しました
-            st.dataframe(saved_df, use_container_width=True)
-
-# ==========================================
-# 6. お問い合わせ・ご要望フォーム (復元)
-# ==========================================
-st.markdown("---")
-st.header("✉️ お問い合わせ / ご要望")
-st.markdown("システムの不具合や機能追加のご要望などがございましたら、以下のフォームから管理者に送信できます。")
-
-with st.form("contact_form"):
-    subject_input = st.text_input("件名", placeholder="例：APIなし抽出のエラーについて")
-    body_input = st.text_area("お問い合わせ内容", placeholder="発生した問題やご要望を詳細にご記入ください。", height=150)
-    
-    submitted = st.form_submit_button("管理者に送信する")
-    if submitted:
-        if not subject_input or not body_input:
-            st.warning("件名とお問い合わせ内容の両方を入力してください。")
-        else:
-            try:
-                res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={
-                    "件名": subject_input,
-                    "メッセージ": body_input,
-                    "_subject": f"【楽曲抽出システム】お問い合わせ: {subject_input}"
-                })
-                if res.status_code == 200:
-                    st.success("✅ 送信が完了しました。貴重なご意見ありがとうございます！")
-                else:
-                    st.error("送信に失敗しました。しばらく時間をおいてから再度お試しください。")
-            except Exception as e:
-                st.error(f"通信エラーが発生しました: {e}")
+            # 高さをデータ行数から自動計算して全件表示（スクロールバーを消す）
+            # 1行あたり約35px + ヘッダー分で計算
+            total_height = (len(saved_df) * 35) + 40
+            st.dataframe(saved_df, height=total_height, use_container_width=True)
