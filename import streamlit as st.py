@@ -29,9 +29,9 @@ st.markdown("""
 このシステムは、音楽のプレイリスト整理や、わからない楽曲名の特定を自動化するお助けツールです。
 上から順番に項目を埋めていくだけで、簡単に操作できます。
 
-*   **🔗 [API必須] URLから一括抽出:** YouTube等のURLから、曲名と合成音声名をリストアップしExcel出力します。
-*   **🖼️ [API不要] 画像・ローマ字から楽曲特定:** スクショやローマ字から、正しい日本語の曲名を探し出します。
-*   **📁 [API不要] Excelからプレイリスト生成:** 曲名のリストから、ノイズを排除した即席のYouTubeプレイリストURLを作ります。
+*   **🔗 URLから一括抽出:** YouTubeやニコニコなどのURLから、曲名と合成音声名をリストアップしExcel出力します。
+*   **🖼️ 画像・ローマ字から楽曲特定:** スクショやローマ字から、正しい日本語の曲名を探し出します。
+*   **📁 Excelからプレイリスト生成:** 曲名のリストから、ノイズを排除した即席のYouTubeプレイリストURLを作ります。
 ---
 """)
 
@@ -58,6 +58,7 @@ def clean_title(raw_title):
     return title.strip()
 
 def get_youtube_playlist(api_key, url):
+    """APIキーを使用したYouTubeプレイリスト取得（全件高精度）"""
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
     if not match: raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
     youtube = build("youtube", "v3", developerKey=api_key)
@@ -73,6 +74,59 @@ def get_youtube_playlist(api_key, url):
         next_page_token = response.get("nextPageToken")
         if not next_page_token: break
     return videos
+
+def get_youtube_playlist_no_api(url):
+    """APIキーを使用しないYouTubeプレイリスト取得（HTML解析）"""
+    if "list=" in url:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+        try:
+            with urllib.request.urlopen(req) as response:
+                html = response.read().decode('utf-8')
+                match = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+                if not match:
+                    raise ValueError("プレイリストデータの解析に失敗しました。")
+                data = json.loads(match.group(1))
+                
+                videos = []
+                def find_playlist_videos(node):
+                    if isinstance(node, list):
+                        for i in node:
+                            for x in find_playlist_videos(i): yield x
+                    elif isinstance(node, dict):
+                        if 'playlistVideoRenderer' in node: yield node['playlistVideoRenderer']
+                        for j in node.values():
+                            for x in find_playlist_videos(j): yield x
+                
+                for item in find_playlist_videos(data):
+                    vid = item.get('videoId')
+                    title = "".join([run.get('text', '') for run in item.get('title', {}).get('runs', [])])
+                    desc = "".join([run.get('text', '') for run in item.get('descriptionSnippet', {}).get('runs', [])]) if 'descriptionSnippet' in item else ""
+                    if vid and title:
+                        videos.append({
+                            "曲名": title,
+                            "概要欄データ": desc,
+                            "URL": f"https://www.youtube.com/watch?v={vid}"
+                        })
+                if not videos:
+                    raise ValueError("プレイリスト内に動画が見つかりませんでした。")
+                return videos
+        except Exception as e:
+            raise ValueError(f"APIなしでの取得に失敗しました: {e}")
+    else:
+        # 単一動画URLの場合
+        vid = extract_youtube_id(url)
+        if vid:
+            req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+            try:
+                with urllib.request.urlopen(req) as response:
+                    html = response.read().decode('utf-8')
+                    match = re.search(r"<title>(.*?)</title>", html)
+                    title = match.group(1).replace(" - YouTube", "") if match else "YouTube Video"
+                    return [{"曲名": title, "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
+            except Exception:
+                return [{"曲名": "YouTube Video", "概要欄データ": "", "URL": f"https://www.youtube.com/watch?v={vid}"}]
+        else:
+            raise ValueError("有効なYouTube URLが見つかりませんでした。")
 
 def get_niconico_playlist(url):
     match = re.search(r"mylist/(\d+)", url)
@@ -167,7 +221,6 @@ def extract_youtube_id(url_text):
     return None
 
 def extract_any_url(row_data):
-    """行データの中から何らかのURL（httpから始まる文字列）を探し出す"""
     for item in row_data:
         cell_str = str(item)
         match = re.search(r"(https?://[^\s]+)", cell_str)
@@ -178,15 +231,39 @@ def extract_any_url(row_data):
 # ==========================================
 # 4. メイン画面（タブ構造）
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["🔗 [API必須] URLから抽出", "🖼️ [API不要] 画像から特定", "📁 [API不要] プレイリスト生成"])
+tab1, tab2, tab3 = st.tabs(["🔗 URLから一括抽出", "🖼️ 画像から特定", "📁 プレイリスト生成"])
 
 # --- タブ1: 従来のプレイリスト抽出機能 ---
 with tab1:
-    st.header("⚙️ 1. システム設定")
-    youtube_api_key = st.text_input("🔑 YouTube API Key", type="password")
+    st.header("⚙️ 1. システム設定＆抽出モード")
+    
+    # APIキー取得方法のアコーディオン案内
+    with st.expander("🔑 YouTube API Key の取得方法（クリックで表示）"):
+        st.markdown("""
+        **【API Key 取得手順】**
+        1. **Google Cloud Console** ([console.cloud.google.com](https://console.cloud.google.com/)) にGoogleアカウントでログインします。
+        2. 画面上部から新しいプロジェクトを作成します（名前は任意）。
+        3. **「APIとサービス」 > 「ライブラリ」** を開き、**「YouTube Data API v3」** を検索して「有効にする」をクリックします。
+        4. **「APIとサービス」 > 「認証情報」** を開き、上部の **「＋ 認証情報を作成」 > 「APIキー」** を選択します。
+        5. 生成された文字列（`AIzaSy...`から始まるコード）をコピーし、下の入力欄に貼り付けます。
+        """)
+    
+    # 抽出モード選択
+    extraction_mode = st.radio(
+        "YouTube抽出モードの選択",
+        ["🔑 APIあり（推奨・全件高精度抽出）", "⚡ APIなし（簡易抽出・100曲程度まで）"],
+        horizontal=True
+    )
+    
+    youtube_api_key = ""
+    if "APIあり" in extraction_mode:
+        youtube_api_key = st.text_input("🔑 YouTube API Key を入力してください", type="password")
+    else:
+        st.caption("※「APIなし」モードでは、APIキーの設定は不要ですが、取得上限が100曲程度に制限され、概要欄データの判定精度が低くなる場合があります。")
+
     col1, col2 = st.columns(2)
     with col1:
-        target_keywords = [k.strip() for k in st.text_area("🔍 抽出するワード", DEFAULT_KEYWORDS, height=100).split(",") if k.strip()]
+        target_keywords = [k.strip() for k in st.text_area("🔍 抽出するワード（歌手・合成音声名など）", DEFAULT_KEYWORDS, height=100).split(",") if k.strip()]
     with col2:
         ng_words = [n.strip() for n in st.text_area("🚫 除外（NG）ワード", DEFAULT_NG_WORDS, height=100).split(",") if n.strip()]
 
@@ -195,29 +272,40 @@ with tab1:
     playlist_url = st.text_input("URLを入力（YouTube / ニコニコ動画 / SoundCloud）")
 
     if st.button("一括抽出を開始する", type="primary"):
-        if not playlist_url: st.warning("⚠️ URLを入力してください。")
+        if not playlist_url:
+            st.warning("⚠️ URLを入力してください。")
         else:
             with st.spinner("データを取得・解析中..."):
                 try:
                     raw_data = []
                     if "youtube.com" in playlist_url or "youtu.be" in playlist_url:
-                        if not youtube_api_key: raise ValueError("YouTube API Keyが設定されていません。")
-                        raw_data = get_youtube_playlist(youtube_api_key, playlist_url)
-                    elif "nicovideo.jp" in playlist_url: raw_data = get_niconico_playlist(playlist_url)
-                    elif "soundcloud.com" in playlist_url: raw_data = get_soundcloud_data(playlist_url)
-                    else: raise ValueError("対応していないURLです。")
+                        if "APIあり" in extraction_mode:
+                            if not youtube_api_key:
+                                raise ValueError("「APIあり」モードが選択されています。API Keyを入力するか、「APIなし」モードに切り替えてください。")
+                            raw_data = get_youtube_playlist(youtube_api_key, playlist_url)
+                        else:
+                            raw_data = get_youtube_playlist_no_api(playlist_url)
+                    elif "nicovideo.jp" in playlist_url:
+                        raw_data = get_niconico_playlist(playlist_url)
+                    elif "soundcloud.com" in playlist_url:
+                        raw_data = get_soundcloud_data(playlist_url)
+                    else:
+                        raise ValueError("対応していないURLです。")
 
                     results = [{"曲名": clean_title(item["曲名"]), "合成音声": extract_vocals(item["曲名"], item["概要欄データ"], target_keywords, ng_words), "URL": item["URL"]} for item in raw_data]
                     df = pd.DataFrame(results)
                     
-                    if df.empty: st.warning("対象となる楽曲が見つかりませんでした。")
+                    if df.empty:
+                        st.warning("対象となる楽曲が見つかりませんでした。")
                     else:
                         st.success(f"✅ {len(df)}曲の解析が完了しました！")
                         st.dataframe(df, use_container_width=True)
                         output = BytesIO()
-                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer: df.to_excel(writer, index=False, sheet_name='Playlist Data')
+                        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                            df.to_excel(writer, index=False, sheet_name='Playlist Data')
                         st.download_button("📥 Excelファイルとしてダウンロード", data=output.getvalue(), file_name="playlist_result.xlsx", mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
-                except Exception as e: st.error(f"❌ エラーが発生しました: {e}")
+                except Exception as e:
+                    st.error(f"❌ エラーが発生しました: {e}")
 
 # --- タブ2: 画像認識 (OCR) & VocaDB検索 ---
 with tab2:
@@ -260,7 +348,7 @@ with tab3:
                 try:
                     df = pd.read_excel(uploaded_excel)
                     video_ids = []
-                    other_platforms = []  # YouTube以外のリンクを格納するリスト
+                    other_platforms = []
                     skipped_count = 0
                     searched_warnings = []
                     
@@ -276,14 +364,12 @@ with tab3:
                         
                         if found_url:
                             vid = extract_youtube_id(found_url)
-                            # YouTubeのリンクではなかった場合、別プラットフォーム用リストに追加
                             if not vid:
                                 other_platforms.append({"title": song_title, "url": found_url})
                         
-                        # ② YouTube IDが無く、かつ「完全一致モード」がオフの場合のみ検索を行う
                         if not vid:
                             if strict_mode:
-                                if not found_url: # URL自体がない完全な空欄の場合のみスキップカウント
+                                if not found_url:
                                     skipped_count += 1
                             else:
                                 if song_title and song_title != "nan" and not found_url:
@@ -298,7 +384,6 @@ with tab3:
                             
                         progress_bar.progress((index + 1) / total_rows)
                             
-                    # --- YouTubeプレイリストの出力 ---
                     if video_ids:
                         st.success(f"✅ {len(video_ids)}曲のYouTube動画データを結合しました！")
                         
@@ -320,14 +405,12 @@ with tab3:
                     else:
                         st.error("有効なYouTube動画リンクが一つも見つかりませんでした。")
                     
-                    # --- その他のプラットフォームのリンク出力 ---
                     if other_platforms:
                         st.markdown("---")
                         st.subheader("🌐 その他のプラットフォームの楽曲")
                         st.markdown("ニコニコ動画やSoundCloudなど、YouTube以外のリンクが設定されていた楽曲です。以下のボタンから直接サイトへアクセスできます。")
                         
                         for item in other_platforms:
-                            # Streamlitの機能で、別タブで開くリンクを生成
                             st.markdown(f"- **{item['title']}** : [リンクを開く]({item['url']})")
                             
                 except Exception as e:
