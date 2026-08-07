@@ -46,6 +46,7 @@ st.markdown("""
 # 3. データ処理ロジック（関数群）
 # ==========================================
 def extract_vocals(title, description, keywords, ng_list):
+    """手動設定したキーワードに基づく音声抽出"""
     found_vocals = set()
     title_str = str(title) if title else ""
     desc_str = str(description) if description else ""
@@ -55,6 +56,24 @@ def extract_vocals(title, description, keywords, ng_list):
         for kw in keywords:
             if kw in desc_str: found_vocals.add(kw)
     return " / ".join(list(found_vocals))
+
+def get_vocalist_from_vocadb(query_text):
+    """VocaDB APIを使用して楽曲の公式ボーカル名を取得する（究極のバックアップ）"""
+    url = "https://vocadb.net/api/songs"
+    # FieldsにArtistsを指定し、歌手データを取得する
+    params = {"query": query_text, "maxResults": 1, "sort": "FavoritedTimes", "fields": "Artists"}
+    try:
+        res = requests.get(url, params=params, headers={"Accept": "application/json"})
+        if res.status_code == 200:
+            items = res.json().get("items", [])
+            if items:
+                artists = items[0].get("artists", [])
+                # カテゴリが "Vocalist" になっているアーティスト名だけを抽出
+                vocalists = [a.get("name") for a in artists if "Vocalist" in a.get("categories", "")]
+                return " / ".join(vocalists)
+    except:
+        pass
+    return ""
 
 def clean_title(raw_title):
     title = str(raw_title)
@@ -204,6 +223,16 @@ def extract_any_url(row_data):
             return match.group(1)
     return None
 
+def load_uploaded_file(uploaded_file):
+    """ExcelおよびCSV(文字コード自動判定)を読み込む汎用関数"""
+    if uploaded_file.name.lower().endswith('.csv'):
+        try:
+            return pd.read_csv(uploaded_file, encoding='utf-8')
+        except UnicodeDecodeError:
+            return pd.read_csv(uploaded_file, encoding='shift_jis')
+    else:
+        return pd.read_excel(uploaded_file)
+
 # ==========================================
 # 4. メイン画面（タブ構造）
 # ==========================================
@@ -246,7 +275,7 @@ with tab1:
 
     col1, col2 = st.columns(2)
     with col1:
-        target_keywords = [k.strip() for k in st.text_area("🔍 抽出するワード（歌手・合成音声名など）", DEFAULT_KEYWORDS, height=100).split(",") if k.strip()]
+        target_keywords = [k.strip() for k in st.text_area("🔍 抽出するワード（手動設定）", DEFAULT_KEYWORDS, height=100).split(",") if k.strip()]
     with col2:
         ng_words = [n.strip() for n in st.text_area("🚫 除外（NG）ワード", DEFAULT_NG_WORDS, height=100).split(",") if n.strip()]
 
@@ -258,7 +287,7 @@ with tab1:
         if not playlist_url:
             st.warning("⚠️ URLを入力してください。")
         else:
-            with st.spinner("データを取得・解析中..."):
+            with st.spinner("データを取得・解析中...（VocaDB照合を行うため時間がかかる場合があります）"):
                 try:
                     raw_data = []
                     if "youtube.com" in playlist_url or "youtu.be" in playlist_url:
@@ -276,12 +305,16 @@ with tab1:
                         raise ValueError("対応していないURLです。")
 
                     results = []
-                    for item in raw_data:
+                    progress_text = st.empty()
+                    total = len(raw_data)
+                    
+                    for i, item in enumerate(raw_data):
                         raw_title = item["曲名"]
                         desc = item["概要欄データ"]
                         url = item["URL"]
+                        progress_text.text(f"楽曲を解析中... ({i+1}/{total})")
                         
-                        # 合成音声の抽出処理
+                        # ① まずは手動設定したキーワードで合成音声を抽出
                         extracted_vocals = extract_vocals(raw_title, desc, target_keywords, ng_words)
                         
                         # 曲名のモード分岐
@@ -290,12 +323,21 @@ with tab1:
                         else:
                             final_title = clean_title(raw_title)
                             
+                        # ② 「スッキリ出力」モード等でボーカルが抜け落ちた（見つからなかった）場合、VocaDBに問い合わせ
+                        if not extracted_vocals:
+                            # 検索用には綺麗なタイトルを使う
+                            search_title = clean_title(raw_title)
+                            db_vocals = get_vocalist_from_vocadb(search_title)
+                            if db_vocals:
+                                extracted_vocals = f"💡 {db_vocals}" # VocaDBから補完されたことを分かりやすくマーク
+                            
                         results.append({
                             "曲名": final_title,
                             "合成音声": extracted_vocals,
                             "URL": url
                         })
-                        
+                    
+                    progress_text.empty()
                     df = pd.DataFrame(results)
                     
                     if df.empty:
@@ -335,21 +377,22 @@ with tab2:
 
 # --- タブ3: Excelからプレイリスト生成 (API不要版) ---
 with tab3:
-    st.header("📁 Excelからプレイリスト生成 (API不要版)")
-    st.markdown("アップロードしたExcelファイルのURLリストから、即席のYouTubeプレイリストURLを生成します。\n\n※YouTube以外のリンク（ニコニコ動画など）が含まれている場合は、下に個別のアクセスリンクとしてまとめられます。")
+    st.header("📁 Excel / CSVからプレイリスト生成 (API不要版)")
+    st.markdown("アップロードしたファイル（ExcelまたはCSV）のURLリストから、即席のYouTubeプレイリストURLを生成します。\n\n※YouTube以外のリンク（ニコニコ動画など）が含まれている場合は、下に個別のアクセスリンクとしてまとめられます。")
     
     strict_mode = st.checkbox("✅ 完全一致モード（列名に関わらず、YouTubeのURLが入力されている楽曲のみを抽出し、曖昧な検索補完を行わない）", value=True)
     
     playlist_ng_words_input = st.text_area("🚫 検索時の除外ワード（※完全一致モードをオフにした場合のみ機能します）", PLAYLIST_NG_WORDS, height=100)
     pl_ng_words = [n.strip() for n in playlist_ng_words_input.split(",") if n.strip()]
     
-    uploaded_excel = st.file_uploader("楽曲リスト（Excelファイル）をアップロード", type=["xlsx"])
+    # xlsx, xlsに加えてcsvにも対応
+    uploaded_data_file = st.file_uploader("楽曲リスト（.xlsx / .xls / .csv）をアップロード", type=["xlsx", "xls", "csv"])
     
     if st.button("プレイリストURLを生成する", type="primary"):
-        if uploaded_excel is not None:
+        if uploaded_data_file is not None:
             with st.spinner("プレイリストを構築中..."):
                 try:
-                    df = pd.read_excel(uploaded_excel)
+                    df = load_uploaded_file(uploaded_data_file)
                     video_ids = []
                     other_platforms = []
                     skipped_count = 0
@@ -417,9 +460,9 @@ with tab3:
                             st.markdown(f"- **{item['title']}** : [リンクを開く]({item['url']})")
                             
                 except Exception as e:
-                    st.error(f"❌ エラーが発生しました: {e}")
+                    st.error(f"❌ エラーが発生しました: ファイルの読み込みまたは解析に失敗しました。詳細: {e}")
         else:
-            st.warning("Excelファイルをアップロードしてください。")
+            st.warning("ファイルをアップロードしてください。")
 
 # ==========================================
 # 5. お問い合わせ・ご要望フォーム
