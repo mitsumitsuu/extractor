@@ -118,17 +118,23 @@ def extract_text_from_image(image_file):
     return pytesseract.image_to_string(Image.open(image_file), lang='eng+jpn').strip()
 
 def search_youtube_no_api(query):
-    """APIを使わずにYouTube検索結果から一番上の動画IDを取得する"""
     search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
     req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     try:
         with urllib.request.urlopen(req) as response:
             html = response.read().decode('utf-8')
             video_ids = re.findall(r"watch\?v=([a-zA-Z0-9_-]{11})", html)
-            if video_ids:
-                return video_ids[0]
+            if video_ids: return video_ids[0]
     except Exception:
         pass
+    return None
+
+def extract_youtube_id(url):
+    """URLからYouTubeの11桁の動画IDを抽出する（ブラウザURL・共有URLどちらにも対応）"""
+    url_str = str(url)
+    match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url_str)
+    if match:
+        return match.group(1)
     return None
 
 # ==========================================
@@ -201,42 +207,51 @@ with tab2:
 # --- タブ3: Excelからプレイリスト生成 (API不要版) ---
 with tab3:
     st.header("📁 Excelからプレイリスト生成 (API不要版)")
-    st.markdown("アップロードしたExcelファイルの楽曲リストから、即席のYouTubeプレイリストURLを生成します。（※ログインやAPIキー設定は一切不要です）")
+    st.markdown("アップロードしたExcelファイルの楽曲リストから、即席のYouTubeプレイリストURLを生成します。")
     
     uploaded_excel = st.file_uploader("楽曲リスト（Excelファイル）をアップロード", type=["xlsx"])
     
     if st.button("プレイリストURLを生成する", type="primary"):
         if uploaded_excel is not None:
-            with st.spinner("楽曲を検索してプレイリストを構築中...（曲数が多いと時間がかかります）"):
+            with st.spinner("楽曲リストを構築中..."):
                 try:
                     df = pd.read_excel(uploaded_excel)
-                    # 「曲名」列があればそれを使用、なければ一番左の列を使用
-                    col_name = "曲名" if "曲名" in df.columns else df.columns[0]
-                    songs = df[col_name].dropna().astype(str).tolist()
+                    video_ids = []
                     
-                    if not songs:
-                        st.warning("ファイル内に楽曲名が見つかりませんでした。")
-                    else:
-                        video_ids = []
-                        progress_bar = st.progress(0)
+                    # プログレスバーの準備
+                    progress_bar = st.progress(0)
+                    total_rows = len(df)
+                    
+                    for index, row in df.iterrows():
+                        vid = None
+                        # ① 確実に正しい動画にするため、まずはURL列にYouTubeリンクがあるかチェック
+                        if "URL" in df.columns:
+                            vid = extract_youtube_id(row["URL"])
                         
-                        for i, song in enumerate(songs):
-                            vid = search_youtube_no_api(song)
-                            if vid:
-                                video_ids.append(vid)
-                            progress_bar.progress((i + 1) / len(songs))
+                        # ② YouTubeリンクがない場合（ニコニコ動画や、曲名しかない場合）は曲名で検索
+                        if not vid:
+                            col_name = "曲名" if "曲名" in df.columns else df.columns[0]
+                            song = str(row.get(col_name, ""))
+                            if song and song != "nan":
+                                vid = search_youtube_no_api(song)
+                        
+                        if vid:
+                            video_ids.append(vid)
                             
-                        if video_ids:
-                            st.success(f"✅ {len(video_ids)}曲の動画データを取得しました！")
-                            # YouTubeの「watch_videos」URLは長すぎるとエラーになるため、最大50曲ずつに分割して出力
-                            chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
+                        # 進捗バーを更新
+                        progress_bar.progress((index + 1) / total_rows)
                             
-                            for idx, chunk in enumerate(chunked_ids):
-                                playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
-                                st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
-                                st.code(playlist_url)
-                        else:
-                            st.error("YouTube上で一致する楽曲が一つも見つかりませんでした。")
+                    if video_ids:
+                        st.success(f"✅ {len(video_ids)}曲の動画データを取得・結合しました！")
+                        # 50曲ずつに分割して出力
+                        chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
+                        
+                        for idx, chunk in enumerate(chunked_ids):
+                            playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
+                            st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
+                            st.code(playlist_url)
+                    else:
+                        st.error("有効な動画データが一つも見つかりませんでした。")
                 except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
         else:
