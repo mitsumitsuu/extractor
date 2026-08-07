@@ -1,3 +1,9 @@
+import os
+# --- エラー回避: Google APIのGCEメタデータ取得タイムアウトを無効化 ---
+os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = ""
+os.environ["NO_GCE_CHECK"] = "true"
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
 import streamlit as st
 import pandas as pd
 import re
@@ -5,6 +11,8 @@ import requests
 import json
 import urllib.parse
 import urllib.request
+import sqlite3
+import hashlib
 from googleapiclient.discovery import build
 import google.generativeai as genai
 from io import BytesIO
@@ -12,10 +20,96 @@ import yt_dlp
 import streamlit.components.v1 as components
 
 # ==========================================
-# 1. UIカスタマイズ＆JavaScript強制注入
+# 0. データベース初期化＆ユーザー認証関数
+# ==========================================
+DB_FILE = "extractor_data.db"
+
+def init_db():
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    # ユーザーテーブル
+    c.execute('''CREATE TABLE IF NOT EXISTS users
+                 (username TEXT PRIMARY KEY, password TEXT, show_warning BOOLEAN)''')
+    # プリセットテーブル
+    c.execute('''CREATE TABLE IF NOT EXISTS presets
+                 (username TEXT, preset_id INTEGER, data TEXT,
+                  PRIMARY KEY(username, preset_id))''')
+    conn.commit()
+    conn.close()
+
+def hash_password(password):
+    return hashlib.sha256(password.encode()).hexdigest()
+
+def create_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    try:
+        c.execute("INSERT INTO users (username, password, show_warning) VALUES (?, ?, ?)", 
+                  (username, hash_password(password), True))
+        # 新規登録時に10個の空プリセットを作成
+        default_preset = json.dumps(get_default_preset())
+        for i in range(1, 11):
+            c.execute("INSERT INTO presets (username, preset_id, data) VALUES (?, ?, ?)", 
+                      (username, i, default_preset))
+        conn.commit()
+        return True
+    except sqlite3.IntegrityError:
+        return False
+    finally:
+        conn.close()
+
+def login_user(username, password):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT show_warning FROM users WHERE username=? AND password=?", 
+              (username, hash_password(password)))
+    user = c.fetchone()
+    conn.close()
+    if user:
+        return {"username": username, "show_warning": bool(user[0])}
+    return None
+
+def update_warning_setting(username, show_warning):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE users SET show_warning=? WHERE username=?", (show_warning, username))
+    conn.commit()
+    conn.close()
+    st.session_state.user['show_warning'] = show_warning
+
+def save_preset_to_db(username, preset_id, data_dict):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("UPDATE presets SET data=? WHERE username=? AND preset_id=?", 
+              (json.dumps(data_dict), username, preset_id))
+    conn.commit()
+    conn.close()
+
+def load_presets_from_db(username):
+    conn = sqlite3.connect(DB_FILE)
+    c = conn.cursor()
+    c.execute("SELECT preset_id, data FROM presets WHERE username=?", (username,))
+    rows = c.fetchall()
+    conn.close()
+    presets = {}
+    for r in rows:
+        presets[r[0]] = json.loads(r[1])
+    return presets
+
+def get_default_preset():
+    return {
+        "mode": "⚡ 高速モード (yt-dlp使用 / API不要)", "title_mode": "✨ スッキリ出力",
+        "yt_key": "", "gemini_key": "", "url": "", "exclude_words": "", "target_vocal": "", "multi_only": False,
+        "min_v": 0, "max_v": 0, "min_c": 0, "max_c": 0,
+        "add_lyrics": True, "add_analysis": False, "add_bpm": False, "add_rights": False
+    }
+
+init_db()
+
+# ==========================================
+# 1. UIカスタマイズ＆JavaScript
 # ==========================================
 st.set_page_config(page_title="楽曲抽出＆特定システム Pro", layout="wide")
-
 hide_streamlit_style = """
 <style>
 #MainMenu {visibility: hidden;}
@@ -53,62 +147,62 @@ setInterval(() => {
 components.html(js_code, height=0, width=0)
 
 # ==========================================
-# 2. 初期設定とセッション管理
+# 2. セッション管理
 # ==========================================
 DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI, 音街ウナ"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
 
-# システム全体設定（警告文の表示有無など）
-if "sys_config" not in st.session_state:
-    st.session_state.sys_config = {"show_reset_warning": True}
-
-# プリセットデータの初期化
-def get_default_preset():
-    return {
-        "mode": "⚡ 高速モード (yt-dlp使用 / API不要)", "title_mode": "✨ スッキリ出力",
-        "yt_key": "", "gemini_key": "", "url": "", "exclude_words": "", "target_vocal": "", "multi_only": False,
-        "min_v": 0, "max_v": 0, "min_c": 0, "max_c": 0,
-        "add_lyrics": True, "add_analysis": False, "add_bpm": False, "add_copyright": True
-    }
-
-if "presets" not in st.session_state:
-    st.session_state.presets = {str(i): get_default_preset() for i in range(1, 11)}
-if "results" not in st.session_state:
-    st.session_state.results = {str(i): None for i in range(1, 11)}
-if "pending_reset" not in st.session_state:
-    st.session_state.pending_reset = None
+if 'user' not in st.session_state:
+    st.session_state.user = None
+if 'presets' not in st.session_state:
+    st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
+if 'results' not in st.session_state:
+    st.session_state.results = {i: None for i in range(1, 11)}
 
 # ==========================================
-# 3. サイドバー (恒久保存・システム設定)
+# 3. サイドバー (ログイン・設定)
 # ==========================================
 with st.sidebar:
-    st.header("⚙️ システム全体設定")
-    
-    st.subheader("💾 プリセットの恒久保存")
-    st.markdown("現在の全プリセット設定をファイルとして保存/復元できます。アカウント不要で設定を引き継げます。")
-    
-    # JSONとしてダウンロード
-    presets_json = json.dumps(st.session_state.presets, ensure_ascii=False, indent=2)
-    st.download_button("📥 設定をバックアップ保存", presets_json, "music_presets.json", "application/json")
-    
-    # JSONをアップロードして復元
-    uploaded_json = st.file_uploader("📤 バックアップから復元", type=["json"])
-    if uploaded_json is not None:
-        if st.button("復元を実行する"):
-            try:
-                loaded_presets = json.load(uploaded_json)
-                st.session_state.presets.update(loaded_presets)
-                st.success("✅ 設定を復元しました！")
-                st.rerun()
-            except Exception as e:
-                st.error("ファイルの読み込みに失敗しました。")
-
-    st.markdown("---")
-    st.subheader("⚠️ 警告表示設定")
-    warn_check = st.checkbox("初期化時の警告文を表示する", value=st.session_state.sys_config["show_reset_warning"])
-    if warn_check != st.session_state.sys_config["show_reset_warning"]:
-        st.session_state.sys_config["show_reset_warning"] = warn_check
-        st.rerun()
+    st.header("👤 ユーザーアカウント")
+    if st.session_state.user is None:
+        login_tab, reg_tab = st.tabs(["ログイン", "新規登録"])
+        with login_tab:
+            l_user = st.text_input("ユーザー名", key="l_user")
+            l_pass = st.text_input("パスワード", type="password", key="l_pass")
+            if st.button("ログイン"):
+                user_data = login_user(l_user, l_pass)
+                if user_data:
+                    st.session_state.user = user_data
+                    st.session_state.presets = load_presets_from_db(l_user)
+                    st.success("ログインしました！")
+                    st.rerun()
+                else:
+                    st.error("ユーザー名かパスワードが違います。")
+        with reg_tab:
+            r_user = st.text_input("新規ユーザー名", key="r_user")
+            r_pass = st.text_input("新規パスワード", type="password", key="r_pass")
+            if st.button("登録してログイン"):
+                if create_user(r_user, r_pass):
+                    st.session_state.user = login_user(r_user, r_pass)
+                    st.session_state.presets = load_presets_from_db(r_user)
+                    st.success("登録完了しました！")
+                    st.rerun()
+                else:
+                    st.error("そのユーザー名は既に使用されています。")
+    else:
+        st.write(f"**{st.session_state.user['username']}** さん、こんにちは！")
+        
+        # 警告表示の設定トグル
+        current_warning_pref = st.session_state.user['show_warning']
+        new_warning_pref = st.checkbox("初期化時の警告を表示する", value=current_warning_pref)
+        if new_warning_pref != current_warning_pref:
+            update_warning_setting(st.session_state.user['username'], new_warning_pref)
+            
+        if st.button("ログアウト"):
+            st.session_state.user = None
+            st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
+            st.session_state.results = {i: None for i in range(1, 11)}
+            st.rerun()
 
 col_title, col_link = st.columns([4, 1])
 with col_title:
@@ -118,12 +212,12 @@ with col_link:
     st.markdown("[👤 制作者 (Mitsu) の lit.link](https://lit.link/_mitsu_3_)")
 
 # ==========================================
-# 4. データ処理・解析関数
+# 4. データ処理関数
 # ==========================================
 def parse_flexible_input(text):
-    """改行、カンマ、読点、スペースなどあらゆる区切り文字を処理する"""
+    """改行、カンマ、空白のどれでもリスト化する"""
     if not text: return []
-    words = re.split(r'[,\n\s、]+', text)
+    words = re.split(r'[\n,、\s]+', text)
     return [w.strip() for w in words if w.strip()]
 
 def extract_vocals_manual(title, description, keywords, ng_list):
@@ -151,24 +245,42 @@ def extract_vocals_ai(api_key, text_data):
     model = genai.GenerativeModel('gemini-1.5-flash')
     prompt = f"""
     以下の動画タイトルと概要欄から、純粋な「楽曲の題名」と「歌唱している合成音声名(ボーカロイド等)」を抽出してください。
-    - オリジナルPV、MV、〇〇P、long ver、各種記号、feat. などの余計な文字列は完全に排除すること。
-    - ボーカルが複数の場合は「/」で区切ること。
-    - 結果は以下のJSONフォーマットのみで出力すること。Markdown不要。
+    - オリジナルPV、MV、〇〇P、long ver、各種記号、feat. などの余計な文字列は完全に排除。
+    - ボーカルが複数の場合は「/」で区切る。
+    - 結果は以下のJSONフォーマットのみで出力。Markdown不要。
     {{"title": "純粋な曲名", "vocals": "合成音声名"}}
+    
     【データ】
     {text_data}
     """
     try:
         response = model.generate_content(prompt)
-        res_text = re.sub(r'`{3}(json)?', '', response.text, flags=re.IGNORECASE).strip()
+        res_text = re.sub(r'^```json\s*', '', response.text, flags=re.M)
+        res_text = re.sub(r'^```\s*', '', res_text, flags=re.M)
+        start, end = res_text.find('{'), res_text.rfind('}')
+        if start != -1 and end != -1: res_text = res_text[start:end+1]
         result = json.loads(res_text)
         return result.get("title", ""), result.get("vocals", "")
-    except Exception:
-        return "", ""
+    except: return "", ""
+
+def judge_rights_ai(api_key, title, vocals, desc):
+    """AIによる簡易権利判定"""
+    if not api_key: return "判定不能（Gemini APIキー未設定）"
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel('gemini-1.5-flash')
+    prompt = f"""
+    以下の楽曲情報から、この曲をDJイベントや大学祭で使用する際の著作権の傾向を推測し、50文字以内で簡潔に回答してください。
+    (例: 「ボカロPの自主管理楽曲の可能性が高いため、本人の規約確認を推奨します。」「JASRAC信託の商業楽曲の可能性が高いです。」等)
+    曲名: {title} / ボーカル: {vocals}
+    概要欄抜粋: {desc[:200]}
+    """
+    try:
+        return model.generate_content(prompt).text.strip()
+    except: return "判定エラー"
 
 def get_youtube_playlist_api(api_key, url, min_v, max_v, min_c, max_c):
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
-    if not match: raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
+    if not match: raise ValueError("有効なプレイリストIDが見つかりません。")
     youtube = build("youtube", "v3", developerKey=api_key)
     videos, next_page_token = [], None
     while True:
@@ -227,7 +339,7 @@ def create_advanced_excel(df):
             multi_df = df[df['合成音声'].astype(str).str.contains('/', na=False)]
             if not multi_df.empty:
                 multi_df.to_excel(writer, sheet_name='複数人歌唱', index=False)
-            
+                
             vocs_order = ["初音ミク", "鏡音リン", "鏡音レン", "MEIKO", "KAITO", "GUMI", "音街ウナ", "可不", "星界", "重音テト"]
             vocs_order += [v for v in unique_vocals if v not in vocs_order]
             wb = writer.book
@@ -247,41 +359,56 @@ def create_advanced_excel(df):
     return output.getvalue()
 
 # ==========================================
-# 5. プリセットタブの描画ループ
+# 5. UI: 初期化ダイアログ (Streamlit 1.34+)
+# ==========================================
+@st.experimental_dialog("⚠️ 設定の初期化")
+def confirm_reset_dialog(pid):
+    st.write(f"プリセット {pid} の設定を初期化しますか？")
+    disable_warning = st.checkbox("次回からこの警告を表示しない")
+    
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("はい、初期化します", type="primary", use_container_width=True):
+            # 警告設定の更新処理
+            if disable_warning and st.session_state.user:
+                update_warning_setting(st.session_state.user['username'], False)
+            elif disable_warning and not st.session_state.user:
+                st.session_state.user = {'show_warning': False} # ゲスト用モック
+            
+            # 初期化処理
+            st.session_state.presets[pid] = get_default_preset()
+            st.session_state.results[pid] = None
+            if st.session_state.user and 'username' in st.session_state.user:
+                save_preset_to_db(st.session_state.user['username'], pid, st.session_state.presets[pid])
+            st.rerun()
+    with col2:
+        if st.button("キャンセル", use_container_width=True):
+            st.rerun()
+
+# ==========================================
+# 6. プリセットタブの描画ループ
 # ==========================================
 preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)])
 
 for i, tab in enumerate(preset_tabs):
-    pid = str(i + 1)
+    pid = i + 1
     with tab:
         p = st.session_state.presets[pid]
         
-        # 初期化ボタンと警告ロジック
-        if st.session_state.pending_reset == pid:
-            st.warning("⚠️ 本当にこのプリセットを初期化しますか？ (保存されていない抽出結果も消去されます)")
-            c_yes, c_no, c_hide = st.columns([1, 1, 3])
-            with c_yes:
-                if st.button("✔️ はい、初期化する", key=f"yes_{pid}", type="primary"):
-                    st.session_state.presets[pid] = get_default_preset()
-                    st.session_state.results[pid] = None
-                    st.session_state.pending_reset = None
-                    st.rerun()
-            with c_no:
-                if st.button("❌ キャンセル", key=f"no_{pid}"):
-                    st.session_state.pending_reset = None
-                    st.rerun()
-            with c_hide:
-                hide_warn = st.checkbox("次回から警告文を表示しない", key=f"hide_{pid}")
-                if hide_warn:
-                    st.session_state.sys_config["show_reset_warning"] = False
-        else:
+        col_btn1, col_btn2 = st.columns([2, 8])
+        with col_btn1:
             if st.button("🔄 設定を初期化", key=f"reset_{pid}"):
-                if st.session_state.sys_config["show_reset_warning"]:
-                    st.session_state.pending_reset = pid
-                    st.rerun()
+                show_warn = True
+                if st.session_state.user and 'show_warning' in st.session_state.user:
+                    show_warn = st.session_state.user['show_warning']
+                
+                if show_warn:
+                    confirm_reset_dialog(pid)
                 else:
                     st.session_state.presets[pid] = get_default_preset()
                     st.session_state.results[pid] = None
+                    if st.session_state.user and 'username' in st.session_state.user:
+                        save_preset_to_db(st.session_state.user['username'], pid, st.session_state.presets[pid])
                     st.rerun()
 
         # UI構築
@@ -290,11 +417,10 @@ for i, tab in enumerate(preset_tabs):
         
         c1, c2 = st.columns(2)
         with c1: p["yt_key"] = st.text_input("YouTube API Key (統計モード用)", value=p["yt_key"], key=f"yk_{pid}")
-        with c2: p["gemini_key"] = st.text_input("Gemini API Key (AIモード用)", value=p["gemini_key"], key=f"gk_{pid}")
+        with c2: p["gemini_key"] = st.text_input("Gemini API Key (AI権利判定・AI抽出用)", value=p["gemini_key"], key=f"gk_{pid}")
 
         st.markdown("---")
         with st.expander("🔍 抽出条件・フィルター設定", expanded=True):
-            st.markdown("**【数値フィルター】** ※枠内をクリックして直接数字を入力できます。")
             cv1, cv2 = st.columns(2)
             with cv1:
                 p["min_v"] = st.number_input("最小再生数", value=p["min_v"], step=10000, key=f"minv_{pid}")
@@ -303,22 +429,23 @@ for i, tab in enumerate(preset_tabs):
                 p["min_c"] = st.number_input("最小コメント数", value=p["min_c"], step=100, key=f"minc_{pid}")
                 p["max_c"] = st.number_input("最大コメント数 (0で無制限)", value=p["max_c"], step=100, key=f"maxc_{pid}")
             
-            st.markdown("**【指定・除外設定】** (スペース、カンマ、改行など自由に区切って入力可能)")
-            p["exclude_words"] = st.text_area("❌ この曲・ワードを除外して抽出", value=p["exclude_words"], placeholder="初音ミクの消失 踊ってみた cover", key=f"ex_{pid}")
-            p["target_vocal"] = st.text_input("🎯 この合成音声の曲だけ抽出", value=p["target_vocal"], placeholder="初音ミク 鏡音リン", key=f"tv_{pid}")
-            p["multi_only"] = st.checkbox("👥 複数人が歌唱している曲のみ抽出する", value=p["multi_only"], key=f"mo_{pid}")
+            p["exclude_words"] = st.text_area("❌ 除外ワード (改行・カンマ・スペース区切り)", value=p["exclude_words"], placeholder="例: 初音ミクの消失 踊ってみた", key=f"ex_{pid}")
+            p["target_vocal"] = st.text_input("🎯 指定合成音声 (改行・カンマ・スペース区切り)", value=p["target_vocal"], placeholder="例: 初音ミク 鏡音リン", key=f"tv_{pid}")
+            p["multi_only"] = st.checkbox("👥 複数人歌唱のみ抽出", value=p["multi_only"], key=f"mo_{pid}")
             
-            st.markdown("**【追加リンク】**")
             cl1, cl2, cl3, cl4 = st.columns(4)
-            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞検索", value=p["add_lyrics"], key=f"al_{pid}")
-            with cl2: p["add_analysis"] = st.checkbox("🤔 考察検索", value=p["add_analysis"], key=f"aa_{pid}")
-            with cl3: p["add_bpm"] = st.checkbox("🎛️ BPM・Key検索", value=p["add_bpm"], key=f"ab_{pid}")
-            with cl4: p["add_copyright"] = st.checkbox("⚖️ 権利関係検索 (JASRAC/NexTone)", value=p.get("add_copyright", True), key=f"ac_{pid}")
+            with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞リンク(Wiki等)", value=p["add_lyrics"], key=f"al_{pid}")
+            with cl2: p["add_analysis"] = st.checkbox("🤔 考察リンク", value=p["add_analysis"], key=f"aa_{pid}")
+            with cl3: p["add_bpm"] = st.checkbox("🎛️ BPM・Keyリンク", value=p["add_bpm"], key=f"ab_{pid}")
+            with cl4: p["add_rights"] = st.checkbox("⚖️ JASRAC等 権利確認リンク & AI判定", value=p.get("add_rights", False), key=f"ar_{pid}")
 
-        p["url"] = st.text_input("🔗 プレイリストURLを入力", value=p["url"], key=f"url_{pid}")
+        p["url"] = st.text_area("🔗 プレイリストURLを入力 (履歴非表示)", value=p["url"], height=68, key=f"url_{pid}")
 
-        # 抽出ボタン
+        # 抽出ボタン (押下時にDB保存)
         if st.button("🚀 抽出開始", type="primary", key=f"btn_{pid}"):
+            if st.session_state.user and 'username' in st.session_state.user:
+                save_preset_to_db(st.session_state.user['username'], pid, p)
+                
             if not p["url"].strip():
                 st.warning("URLを入力してください。")
             else:
@@ -326,8 +453,8 @@ for i, tab in enumerate(preset_tabs):
                     try:
                         ex_list = parse_flexible_input(p["exclude_words"])
                         tv_list = parse_flexible_input(p["target_vocal"])
-                        kw_list = [k.strip() for k in DEFAULT_KEYWORDS.split(',')]
-                        ng_list = [n.strip() for n in DEFAULT_NG_WORDS.split(',')]
+                        kw_list = parse_flexible_input(DEFAULT_KEYWORDS)
+                        ng_list = parse_flexible_input(DEFAULT_NG_WORDS)
                         
                         raw_data = []
                         if "統計" in p["mode"]:
@@ -357,18 +484,21 @@ for i, tab in enumerate(preset_tabs):
                             encoded = urllib.parse.quote(safe_t)
                             
                             row = {"曲名": clean_t, "合成音声": vocals, "URL": f'=HYPERLINK("{url}", "{url}")'}
-                            if p["add_lyrics"]: row["歌詞検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+歌詞", "歌詞を検索")'
+                            
+                            if p["add_lyrics"]: row["歌詞検索(Wiki等)"] = f'=HYPERLINK("https://w.atwiki.jp/hmiku/search?keyword={encoded}", "初音ミクWikiで検索")'
                             if p["add_analysis"]: row["考察検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+考察", "考察を検索")'
                             if p["add_bpm"]: row["BPM・キー検索"] = f'=HYPERLINK("https://www.google.com/search?q={encoded}+BPM+Key", "BPM/Keyを検索")'
-                            if p.get("add_copyright", True):
-                                row["JASRAC検索"] = f'=HYPERLINK("https://www.google.com/search?q=site:jasrac.or.jp+{encoded}", "JASRAC検索")'
-                                row["NexTone検索"] = f'=HYPERLINK("https://www.google.com/search?q=NexTone+{encoded}", "NexTone検索")'
+                            
+                            if p["add_rights"]:
+                                row["JASRAC検索(J-WID)"] = f'=HYPERLINK("https://www2.jasrac.or.jp/eJwid/", "J-WIDを開く")'
+                                row["NexTone検索"] = f'=HYPERLINK("https://search.nex-tone.co.jp/terms", "NexToneを開く")'
+                                row["権利AI判定"] = judge_rights_ai(p["gemini_key"], safe_t, vocals, desc) if p["gemini_key"] else "APIキー未設定"
                                 
                             results.append(row)
 
                         df = pd.DataFrame(results)
                         if df.empty:
-                            st.warning("条件に一致する楽曲がありませんでした。除外設定や数値を緩めてください。")
+                            st.warning("条件に一致する楽曲がありませんでした。")
                             st.session_state.results[pid] = None
                         else:
                             st.session_state.results[pid] = df
@@ -376,7 +506,6 @@ for i, tab in enumerate(preset_tabs):
                         st.error(f"エラーが発生しました: {e}")
                         st.session_state.results[pid] = None
 
-        # 結果表示
         saved_df = st.session_state.results[pid]
         if saved_df is not None and not saved_df.empty:
             st.success(f"✅ {len(saved_df)}曲の抽出結果 (プリセット {pid})")
@@ -384,7 +513,7 @@ for i, tab in enumerate(preset_tabs):
             c_dl1, c_dl2 = st.columns(2)
             with c_dl1:
                 excel_data = create_advanced_excel(saved_df)
-                st.download_button("📥 XLSXダウンロード (シート分割・横並び自動生成)", excel_data, f"playlist_p{pid}.xlsx")
+                st.download_button("📥 XLSXダウンロード", excel_data, f"playlist_p{pid}.xlsx")
             with c_dl2:
                 csv_df = saved_df.copy()
                 for col in csv_df.columns:
@@ -393,7 +522,7 @@ for i, tab in enumerate(preset_tabs):
                 csv = csv_df.to_csv(index=False).encode('utf-8-sig')
                 st.download_button("📥 CSVダウンロード", csv, f"playlist_p{pid}.csv", "text/csv")
             
-            with st.expander("📋 ワンクリックで表データをコピーする（右上のアイコンをクリック）"):
+            with st.expander("📋 ワンクリックで表データをコピーする"):
                 st.code(csv_df.to_csv(index=False, sep='\t'), language='csv')
             
             st.dataframe(saved_df)
