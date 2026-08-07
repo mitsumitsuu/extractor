@@ -26,7 +26,7 @@ col_title, col_link = st.columns([4, 1])
 with col_title:
     st.title("🎶 楽曲抽出＆特定システム")
 with col_link:
-    st.write("") # スペース調整
+    st.write("")
     st.write("")
     st.markdown("[👤 制作者 (Mitsu) の lit.link](https://lit.link/_mitsu_3_)")
 
@@ -83,41 +83,68 @@ def get_youtube_playlist(api_key, url):
 def get_youtube_playlist_no_api(url):
     match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
     if match:
-        # 動画ページに付属しているプレイリストURLなどを、純粋なプレイリスト専用URLに変換する
         playlist_id = match.group(1)
         clean_url = f"https://www.youtube.com/playlist?list={playlist_id}"
-        req = urllib.request.Request(clean_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
+        # ヘッダー情報を充実させて、YouTube側に一般的なブラウザからのアクセスだと認識させる
+        req = urllib.request.Request(clean_url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+            "Accept-Language": "ja-JP,ja;q=0.9,en-US;q=0.8,en;q=0.7"
+        })
         try:
             with urllib.request.urlopen(req) as response:
                 html = response.read().decode('utf-8')
-                match_data = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
-                if not match_data:
-                    raise ValueError("プレイリストデータの解析に失敗しました。")
-                data = json.loads(match_data.group(1))
                 
+                # ytInitialDataの表記揺れ（varやwindow[]など）を柔軟に捉える正規表現
+                match_data = re.search(r"ytInitialData\s*=\s*(\{.+?\});", html)
+                if not match_data:
+                    raise ValueError("プレイリストデータの構造が通常と異なります。非公開リストであるか、YouTubeの仕様が変更された可能性があります。")
+                
+                data = json.loads(match_data.group(1))
                 videos = []
+                
                 def find_playlist_videos(node):
                     if isinstance(node, list):
                         for i in node:
                             for x in find_playlist_videos(i): yield x
                     elif isinstance(node, dict):
+                        # YouTubeが使用する複数のRenderer（箱）名に対応
                         if 'playlistVideoRenderer' in node: yield node['playlistVideoRenderer']
+                        elif 'playlistPanelVideoRenderer' in node: yield node['playlistPanelVideoRenderer']
+                        elif 'compactVideoRenderer' in node: yield node['compactVideoRenderer']
                         for j in node.values():
                             for x in find_playlist_videos(j): yield x
                 
                 for item in find_playlist_videos(data):
                     vid = item.get('videoId')
-                    title = "".join([run.get('text', '') for run in item.get('title', {}).get('runs', [])])
-                    desc = "".join([run.get('text', '') for run in item.get('descriptionSnippet', {}).get('runs', [])]) if 'descriptionSnippet' in item else ""
+                    title = ""
+                    # タイトルの構造揺れに対応
+                    if 'title' in item and 'runs' in item['title']:
+                        title = "".join([run.get('text', '') for run in item['title']['runs']])
+                    elif 'title' in item and 'simpleText' in item['title']:
+                        title = item['title']['simpleText']
+                        
+                    desc = ""
+                    if 'descriptionSnippet' in item and 'runs' in item['descriptionSnippet']:
+                        desc = "".join([run.get('text', '') for run in item['descriptionSnippet']['runs']])
+                        
                     if vid and title:
                         videos.append({
                             "曲名": title,
                             "概要欄データ": desc,
                             "URL": f"https://www.youtube.com/watch?v={vid}"
                         })
-                if not videos:
+                
+                # 重複を排除してリスト化
+                unique_videos = []
+                seen = set()
+                for v in videos:
+                    if v['URL'] not in seen:
+                        seen.add(v['URL'])
+                        unique_videos.append(v)
+                        
+                if not unique_videos:
                     raise ValueError("プレイリスト内に動画が見つかりませんでした。")
-                return videos
+                return unique_videos
         except Exception as e:
             raise ValueError(f"{e}")
     else:
@@ -181,11 +208,11 @@ def extract_text_from_image(image_file):
 
 def search_youtube_no_api_advanced(query, ng_words_list):
     search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
-    req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
+    req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)", "Accept-Language": "ja-JP,ja;q=0.9"})
     try:
         with urllib.request.urlopen(req) as response:
             html = response.read().decode('utf-8')
-            match = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+            match = re.search(r"ytInitialData\s*=\s*(\{.+?\});", html)
             if not match: return None
             data = json.loads(match.group(1))
 
@@ -440,7 +467,6 @@ with st.form("contact_form"):
             st.warning("件名とお問い合わせ内容の両方を入力してください。")
         else:
             try:
-                # FormSubmitのAJAXエンドポイントを使用してメールを送信
                 res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={
                     "件名": subject_input,
                     "メッセージ": body_input,
