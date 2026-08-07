@@ -15,6 +15,7 @@ from PIL import Image
 # ==========================================
 DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花"
 DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
+PLAYLIST_NG_WORDS = "short, 歌ってみた, 踊ってみた, cover, カバー, inst, off vocal, オフボーカル, カラオケ, 実況, 弾いてみた"
 
 st.set_page_config(page_title="楽曲抽出＆特定システム", layout="wide")
 
@@ -28,9 +29,9 @@ st.markdown("""
 このシステムは、音楽のプレイリスト整理や、わからない楽曲名の特定を自動化するお助けツールです。
 上から順番に項目を埋めていくだけで、簡単に操作できます。
 
-*   **🔗 URLから一括抽出:** YouTubeやニコニコなどのURLを入れるだけで、曲名と合成音声名をリストアップしExcel出力します。
-*   **🖼️ 画像・ローマ字から楽曲特定:** スクショやローマ字から、正しい日本語の曲名を探し出します。
-*   **📁 Excelからプレイリスト生成:** 曲名のリスト（Excel）を入れると、API不要ですぐに聴けるYouTubeプレイリストURLを作ります。
+*   **🔗 [API必須] URLから一括抽出:** YouTube等のURLから、曲名と合成音声名をリストアップしExcel出力します。
+*   **🖼️ [API不要] 画像・ローマ字から楽曲特定:** スクショやローマ字から、正しい日本語の曲名を探し出します。
+*   **📁 [API不要] Excelからプレイリスト生成:** 曲名のリストから、ノイズを排除した即席のYouTubeプレイリストURLを作ります。
 ---
 """)
 
@@ -117,35 +118,90 @@ def search_vocadb(query_text):
 def extract_text_from_image(image_file):
     return pytesseract.image_to_string(Image.open(image_file), lang='eng+jpn').strip()
 
-def search_youtube_no_api(query):
+def search_youtube_no_api_advanced(query, ng_words_list):
+    """APIを使わずに検索結果の裏側（JSON）を解析し、時間とタイトルの条件に合う動画を厳選する"""
     search_url = f"https://www.youtube.com/results?search_query={urllib.parse.quote(query)}"
     req = urllib.request.Request(search_url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"})
     try:
         with urllib.request.urlopen(req) as response:
             html = response.read().decode('utf-8')
-            video_ids = re.findall(r"watch\?v=([a-zA-Z0-9_-]{11})", html)
-            if video_ids: return video_ids[0]
+            
+            # HTML内に埋め込まれたYouTubeの内部データ(JSON)を抽出
+            match = re.search(r"var ytInitialData = (\{.*?\});</script>", html)
+            if not match: return None
+            data = json.loads(match.group(1))
+
+            # JSONの中から 'videoRenderer' (動画データ) を再帰的にすべて探し出す内部関数
+            def find_videos(node):
+                if isinstance(node, list):
+                    for i in node:
+                        for x in find_videos(i): yield x
+                elif isinstance(node, dict):
+                    if 'videoRenderer' in node: yield node['videoRenderer']
+                    for j in node.values():
+                        for x in find_videos(j): yield x
+
+            # 検索結果を上から順にチェック
+            for video in find_videos(data):
+                vid = video.get('videoId')
+                
+                # タイトルの取得
+                title = ""
+                if 'title' in video and 'runs' in video['title']:
+                    title = "".join([run.get('text', '') for run in video['title']['runs']])
+                
+                # 再生時間の取得（例: "3:45" や "1:04:20"）
+                length_text = ""
+                if 'lengthText' in video and 'simpleText' in video['lengthText']:
+                    length_text = video['lengthText']['simpleText']
+                
+                if not vid or not length_text: continue
+
+                # 「秒数」に変換する
+                parts = length_text.split(':')
+                sec = 0
+                if len(parts) == 2:
+                    sec = int(parts[0]) * 60 + int(parts[1])
+                elif len(parts) == 3:
+                    sec = int(parts[0]) * 3600 + int(parts[1]) * 60 + int(parts[2])
+                
+                # フィルター1：秒数制限 (1:20 〜 7:00 つまり 80秒 〜 420秒)
+                if sec < 80 or sec > 420:
+                    continue
+                
+                # フィルター2：NGワード制限（大文字・小文字を区別せずにチェック）
+                title_lower = title.lower()
+                is_ng = False
+                for ng in ng_words_list:
+                    if ng.lower() in title_lower:
+                        is_ng = True
+                        break
+                
+                if is_ng:
+                    continue
+                
+                # すべてのフィルターを通過した最初の動画（最も原曲に近いもの）のIDを返す
+                return vid
+                
     except Exception:
         pass
     return None
 
 def extract_youtube_id(url):
-    """URLからYouTubeの11桁の動画IDを抽出する（ブラウザURL・共有URLどちらにも対応）"""
     url_str = str(url)
     match = re.search(r"(?:v=|youtu\.be/)([a-zA-Z0-9_-]{11})", url_str)
-    if match:
-        return match.group(1)
+    if match: return match.group(1)
     return None
 
 # ==========================================
 # 4. メイン画面（タブ構造）
 # ==========================================
-tab1, tab2, tab3 = st.tabs(["🔗 URLから一括抽出", "🖼️ 画像・ローマ字から楽曲特定", "📁 Excelからプレイリスト生成"])
+tab1, tab2, tab3 = st.tabs(["🔗 [API必須] URLから抽出", "🖼️ [API不要] 画像から特定", "📁 [API不要] プレイリスト生成"])
 
 # --- タブ1: 従来のプレイリスト抽出機能 ---
 with tab1:
     st.header("⚙️ 1. システム設定")
-    youtube_api_key = st.text_input("🔑 YouTube API Key (※YouTube抽出を行う場合のみ入力)", type="password")
+    youtube_api_key = st.text_input("🔑 YouTube API Key", type="password")
     col1, col2 = st.columns(2)
     with col1:
         target_keywords = [k.strip() for k in st.text_area("🔍 抽出するワード", DEFAULT_KEYWORDS, height=100).split(",") if k.strip()]
@@ -209,40 +265,53 @@ with tab3:
     st.header("📁 Excelからプレイリスト生成 (API不要版)")
     st.markdown("アップロードしたExcelファイルの楽曲リストから、即席のYouTubeプレイリストURLを生成します。")
     
+    playlist_ng_words_input = st.text_area("🚫 検索時の除外ワード（タイトルにこれらが含まれる動画はスキップ）", PLAYLIST_NG_WORDS, height=100)
+    pl_ng_words = [n.strip() for n in playlist_ng_words_input.split(",") if n.strip()]
+    
     uploaded_excel = st.file_uploader("楽曲リスト（Excelファイル）をアップロード", type=["xlsx"])
     
     if st.button("プレイリストURLを生成する", type="primary"):
         if uploaded_excel is not None:
-            with st.spinner("楽曲リストを構築中..."):
+            with st.spinner("高精度フィルターを適用して楽曲を検索・構築中..."):
                 try:
                     df = pd.read_excel(uploaded_excel)
                     video_ids = []
+                    searched_warnings = []
                     
-                    # プログレスバーの準備
                     progress_bar = st.progress(0)
                     total_rows = len(df)
                     
                     for index, row in df.iterrows():
                         vid = None
-                        # ① 確実に正しい動画にするため、まずはURL列にYouTubeリンクがあるかチェック
+                        track_number = index + 1
+                        col_name = "曲名" if "曲名" in df.columns else df.columns[0]
+                        song_title = str(row.get(col_name, f"不明な曲（{track_number}行目）"))
+                        
+                        # ① URL列から確実なIDを取得
                         if "URL" in df.columns:
                             vid = extract_youtube_id(row["URL"])
                         
-                        # ② YouTubeリンクがない場合（ニコニコ動画や、曲名しかない場合）は曲名で検索
+                        # ② URLがない場合は【高精度タイトル検索】を実行
                         if not vid:
-                            col_name = "曲名" if "曲名" in df.columns else df.columns[0]
-                            song = str(row.get(col_name, ""))
-                            if song and song != "nan":
-                                vid = search_youtube_no_api(song)
+                            if song_title and song_title != "nan":
+                                vid = search_youtube_no_api_advanced(song_title, pl_ng_words)
+                                if vid:
+                                    searched_warnings.append(f"・{track_number}曲目：{song_title}")
                         
                         if vid:
                             video_ids.append(vid)
                             
-                        # 進捗バーを更新
                         progress_bar.progress((index + 1) / total_rows)
                             
                     if video_ids:
                         st.success(f"✅ {len(video_ids)}曲の動画データを取得・結合しました！")
+                        
+                        if searched_warnings:
+                            st.warning("⚠️ 以下の楽曲はURLリンクが無かったため、時間（1:20〜7:00）とNGワードの条件をクリアした動画を自動検索して補完しました。")
+                            with st.expander("検索で補完した楽曲の一覧を確認する"):
+                                for warning in searched_warnings:
+                                    st.write(warning)
+                        
                         # 50曲ずつに分割して出力
                         chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
                         
@@ -251,7 +320,7 @@ with tab3:
                             st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
                             st.code(playlist_url)
                     else:
-                        st.error("有効な動画データが一つも見つかりませんでした。")
+                        st.error("有効な動画データが一つも見つかりませんでした。条件に合う動画が存在しないか、フィルターが厳しすぎる可能性があります。")
                 except Exception as e:
                     st.error(f"❌ エラーが発生しました: {e}")
         else:
