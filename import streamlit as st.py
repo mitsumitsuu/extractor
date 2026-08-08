@@ -22,29 +22,19 @@ import datetime
 # 0. メール送信設定
 # ==========================================
 SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
-# smtplibのエラーを防ぐため、スペースを除外して結合
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
 
 # ==========================================
-# 1. データベース初期化 (互換性エラー自動修復機能付き)
+# 1. データベース初期化
 # ==========================================
 def init_db():
     conn = sqlite3.connect('app_data.db', check_same_thread=False)
     c = conn.cursor()
-    # ユーザーテーブル作成
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
-    
-    # 【自動修復】古いDBにemailとlanguage列がなければ追加する
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN email TEXT")
-    except sqlite3.OperationalError:
-        pass # 既に存在する場合は無視
-        
-    try:
-        c.execute("ALTER TABLE users ADD COLUMN language TEXT")
-    except sqlite3.OperationalError:
-        pass # 既に存在する場合は無視
-
+    try: c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    except sqlite3.OperationalError: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN language TEXT")
+    except sqlite3.OperationalError: pass
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
@@ -54,15 +44,12 @@ def init_db():
 conn = init_db()
 
 def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
-
 def register_user(username, password, email, language):
     try:
-        conn.cursor().execute("INSERT INTO users (username, password, email, language) VALUES (?, ?, ?, ?)", 
-                              (username, hash_password(password), email, language))
+        conn.cursor().execute("INSERT INTO users (username, password, email, language) VALUES (?, ?, ?, ?)", (username, hash_password(password), email, language))
         conn.commit()
         return True
-    except sqlite3.IntegrityError:
-        return False
+    except sqlite3.IntegrityError: return False
 
 def login_user(username, password):
     c = conn.cursor()
@@ -90,26 +77,21 @@ def reset_password(token, new_password):
 
 def send_reset_email(email, username, token, language, gemini_key):
     if not SENDER_EMAIL or "your_email" in SENDER_EMAIL: return False
-    
-    # ※Streamlit Cloud等にデプロイしている場合は、ここのURLをご自身の公開URLに変更してください
     reset_link = f"https://your-app-url.com/?token={token}"
-    base_text = f"パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。\n\nユーザー名: {username}\nリセットリンク: {reset_link}\n\n※このリンクは1時間有効です。"
-    
+    base_text = f"パスワードの再設定リクエストを受け付けました。以下のリンクをクリックしてください。\n\nユーザー名: {username}\nリンク: {reset_link}"
     if gemini_key and language != "日本語":
         try:
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            body = model.generate_content(f"Translate the following email into {language}. Keep the links intact:\n{base_text}").text
+            body = model.generate_content(f"Translate into {language}:\n{base_text}").text
         except: body = base_text
-    else:
-        body = base_text
+    else: body = base_text
 
     msg = MIMEText(body, 'plain', 'utf-8')
-    msg['Subject'] = "Password Reset Request / パスワード再設定"
+    msg['Subject'] = "Password Reset"
     msg['From'] = SENDER_EMAIL
     msg['To'] = email
     msg['Date'] = formatdate()
-
     try:
         smtp = smtplib.SMTP('smtp.gmail.com', 587)
         smtp.starttls()
@@ -117,8 +99,7 @@ def send_reset_email(email, username, token, language, gemini_key):
         smtp.sendmail(SENDER_EMAIL, email, msg.as_string())
         smtp.close()
         return True
-    except Exception:
-        return False
+    except: return False
 
 def save_preset_to_db(username, preset_id, data_dict):
     conn.cursor().execute("REPLACE INTO presets (username, preset_id, data) VALUES (?, ?, ?)", (username, preset_id, json.dumps(data_dict)))
@@ -170,6 +151,11 @@ doc.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
         const active = doc.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
+            // お問い合わせフォームでの Ctrl + Enter 送信サポート
+            if (e.ctrlKey && active.closest('form')) {
+                const submitBtn = active.closest('form').querySelector('button[type="submit"]');
+                if (submitBtn) { e.preventDefault(); submitBtn.click(); return; }
+            }
             const inputs = Array.from(doc.querySelectorAll('input:not([type="hidden"]):not([disabled]), textarea:not([disabled])'));
             const index = inputs.indexOf(active);
             if (index > -1 && index < inputs.length - 1) { e.preventDefault(); inputs[index + 1].focus(); }
@@ -215,6 +201,9 @@ DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklis
 if "first_visit" not in st.session_state: st.session_state.first_visit = True
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
 if "hide_warning_forever" not in st.session_state: st.session_state.hide_warning_forever = False
+
+# お問い合わせフォーム用の入力値クリア制御用
+if "contact_sent" not in st.session_state: st.session_state.contact_sent = False
 
 def get_default_preset():
     return {
@@ -464,7 +453,7 @@ def create_advanced_excel(df):
     return output.getvalue()
 
 # ==========================================
-# 6. ガイド・お問い合わせ
+# 6. ガイド・お問い合わせ (送信後自動クリア・成功表示対応)
 # ==========================================
 with st.expander("📖 詳しい使い方とショートカットキー / 🔑 API取得方法 / ✉️ お問い合わせ", expanded=True):
     col_guide, col_contact = st.columns([1, 1])
@@ -474,23 +463,31 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
         **【ショートカットキー (PC)】**
         *   `Ctrl`+`Shift`+`▶` : 右のプリセットへ / `Ctrl`+`Shift`+`◀` : 左へ
         *   `Ctrl`+`Shift`+`R` : 現在のプリセット初期化
-        *   `Enter` : 次の入力項目へ移動
+        *   `Enter` : 次の入力項目へ移動 (お問い合わせは `Ctrl`+`Enter` で送信可能)
         </div>
         
         **【🔑 APIキーの取得方法】**
-        *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) にアクセス ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」からAPIキーを作成。
-        *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) にアクセス ➔ 「Get API key」をクリック ➔ APIキーを作成。
-        
-        **【新機能: コピペ解析 (AI)】**
-        BillboardやSNSのランキング文字をそのまま貼り付けて抽出開始すると、AIが曲名を認識し自動でYouTube動画を探し出してプレイリスト化します。
+        *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」からAPIキーを作成。
+        *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) ➔ 「Get API key」をクリック ➔ APIキーを作成。
         """, unsafe_allow_html=True)
     with col_contact:
-        with st.form("contact_form_top"):
+        with st.form("contact_form_top", clear_on_submit=True):
+            st.markdown("**管理者にメッセージを送信 (Ctrl + Enterでも送信可)**")
             subject_input = st.text_input("件名", placeholder="バグ報告・要望")
             body_input = st.text_area("内容", height=100)
-            if st.form_submit_button("管理者に送信"):
-                try: requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
-                except Exception: pass
+            submitted = st.form_submit_button("管理者に送信")
+            if submitted:
+                if subject_input and body_input:
+                    try:
+                        res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
+                        if res.status_code == 200:
+                            st.success("✅ 送信が完了しました！管理者へ無事に届きました。")
+                        else:
+                            st.error("送信に失敗しました。")
+                    except:
+                        st.error("通信エラーが発生しました。")
+                else:
+                    st.warning("件名と内容の両方を入力してください。")
 
 st.session_state.first_visit = False
 
