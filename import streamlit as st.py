@@ -19,10 +19,13 @@ import uuid
 import datetime
 
 # ==========================================
-# 0. メール送信設定
+# 0. 基本設定 (メールとアプリURL)
 # ==========================================
 SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
+
+# ※ご自身のStreamlitアプリのURLを指定してください（末尾の / は不要です）
+APP_URL = "https://tyusyutusann.streamlit.app"
 
 # ==========================================
 # 1. データベース初期化 (完全自動修復付き)
@@ -43,7 +46,6 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
     
-    # パスワードリセットテーブルと、その自動修復
     c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
     try: c.execute("ALTER TABLE password_resets ADD COLUMN email TEXT")
     except sqlite3.OperationalError: pass
@@ -52,6 +54,18 @@ def init_db():
     return conn
 
 conn = init_db()
+
+# --- パスワード強度判定関数 ---
+def validate_password(pwd):
+    if len(pwd) < 8:
+        return False, "パスワードは8文字以上にしてください。"
+    if not re.search(r'[A-Z]', pwd):
+        return False, "大文字の英字(A-Z)を1文字以上含めてください。"
+    if not re.search(r'[a-z]', pwd):
+        return False, "小文字の英字(a-z)を1文字以上含めてください。"
+    if not re.search(r'\d', pwd):
+        return False, "数字(0-9)を1文字以上含めてください。"
+    return True, ""
 
 def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
 
@@ -112,7 +126,6 @@ def send_login_notify_email(email, username):
 def create_reset_token(email):
     token = str(uuid.uuid4())
     expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
-    # emailカラムに保存する
     conn.cursor().execute("INSERT INTO password_resets (token, email, expiry) VALUES (?, ?, ?)", (token, email, expiry))
     conn.commit()
     return token
@@ -130,7 +143,7 @@ def reset_password(token, new_password):
     return False
 
 def send_reset_email(email, token):
-    reset_link = f"https://your-app-url.com/?token={token}"
+    reset_link = f"{APP_URL}/?token={token}"
     subject = "Password Reset Request / パスワード再設定"
     body = f"""パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。
 We received a request to reset your password. Click the link below to set a new password.
@@ -237,8 +250,12 @@ components.html(js_code, height=0, width=0)
 # ==========================================
 # 3. 初期設定とセッション管理
 # ==========================================
+DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI, 音街ウナ"
+DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
+
+if "first_visit" not in st.session_state: st.session_state.first_visit = True
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
-if "sys_language" not in st.session_state: st.session_state.sys_language = "日本語"
+if "hide_warning_forever" not in st.session_state: st.session_state.hide_warning_forever = False
 
 def get_default_preset():
     return {
@@ -256,14 +273,18 @@ if "token" in query_params:
     st.subheader("🔐 パスワードの再設定")
     new_pass = st.text_input("新しいパスワードを入力", type="password")
     if st.button("パスワードを更新"):
-        if reset_password(query_params["token"], new_pass):
-            st.success("パスワードを更新しました。トップページに戻ってログインしてください。")
+        is_valid, err_msg = validate_password(new_pass)
+        if not is_valid:
+            st.warning(err_msg)
         else:
-            st.error("トークンが無効または期限切れです。")
+            if reset_password(query_params["token"], new_pass):
+                st.success("パスワードを更新しました。一度このタブを閉じて、通常のURLから再度アクセスしログインしてください。")
+            else:
+                st.error("トークンが無効または期限切れです。")
     st.stop()
 
 # ==========================================
-# 4. ヘッダー（翻訳・寄付・アカウント）
+# 4. ヘッダー
 # ==========================================
 col_title, col_trans, col_auth = st.columns([5, 3, 2])
 with col_title:
@@ -315,7 +336,7 @@ with col_auth:
                         if send_reset_email(reset_email, token):
                             st.success("再設定リンクを送信しました。")
                         else:
-                            st.error("メール送信設定がサーバー側にありません。")
+                            st.error("メール送信に失敗しました。")
                     else:
                         st.error("そのメールアドレスは登録されていません。")
             else:
@@ -328,8 +349,11 @@ with col_auth:
                     u_update_notif = st.checkbox("運営からのサイト更新メッセージを受け取る", value=True)
                     
                     if st.button("登録", use_container_width=True):
+                        is_valid_pw, pw_msg = validate_password(u_pass)
                         if not u_email:
                             st.warning("メールアドレスを入力してください。")
+                        elif not is_valid_pw:
+                            st.warning(pw_msg)
                         elif register_user(u_name, u_pass, u_email, u_login_notif, u_update_notif):
                             send_registration_email(u_email)
                             st.success("登録完了！メールをご確認の上、ログインしてください。")
