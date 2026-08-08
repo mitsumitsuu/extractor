@@ -25,7 +25,7 @@ SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
 
 # ==========================================
-# 1. データベース初期化 (カラム追加自動修復付き)
+# 1. データベース初期化 (完全自動修復付き)
 # ==========================================
 def init_db():
     conn = sqlite3.connect('app_data.db', check_same_thread=False)
@@ -42,7 +42,12 @@ def init_db():
 
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, email TEXT, expiry DATETIME)''')
+    
+    # パスワードリセットテーブルと、その自動修復
+    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
+    try: c.execute("ALTER TABLE password_resets ADD COLUMN email TEXT")
+    except sqlite3.OperationalError: pass
+
     conn.commit()
     return conn
 
@@ -88,17 +93,14 @@ def send_email_base(to_email, subject, body):
 
 def send_registration_email(email):
     subject = "【楽曲抽出システム】新規登録が完了しました"
-    body = """楽曲抽出＆特定システムへようこそ！新規登録が完了しました。
-
-【簡単な使い方】
+    body = """新規登録が完了しました。
+使い方は以下の通りです。
 1. YouTubeやランキング等の文字データをコピーします。
 2. アプリの専用欄にペーストして抽出ボタンを押します。
 3. AIが自動で楽曲をリスト化し、ワンクリックでプレイリストやExcelに変換します。
-
-ご要望や不具合報告がありましたら、画面右上の「お問い合わせ」からお気軽にご連絡ください。
-また、本システムは無料で提供されております。今後の開発継続のため、寄付へのご協力をお願いいたします（設定メニュー内リンクより可能です）。
-
-※このメールは送信専用です。返信は受け付けておりません。"""
+要望があれば、お問い合わせの所から、要望のメールを送ってください。
+お金の寄付もお願いします。
+なお、このメールに対する返信は受け付けません。"""
     send_email_base(email, subject, body)
 
 def send_login_notify_email(email, username):
@@ -110,6 +112,7 @@ def send_login_notify_email(email, username):
 def create_reset_token(email):
     token = str(uuid.uuid4())
     expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
+    # emailカラムに保存する
     conn.cursor().execute("INSERT INTO password_resets (token, email, expiry) VALUES (?, ?, ?)", (token, email, expiry))
     conn.commit()
     return token
@@ -127,7 +130,6 @@ def reset_password(token, new_password):
     return False
 
 def send_reset_email(email, token):
-    # APIや言語設定に依存しないスマートな多言語併記テンプレート
     reset_link = f"https://your-app-url.com/?token={token}"
     subject = "Password Reset Request / パスワード再設定"
     body = f"""パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。
@@ -235,12 +237,8 @@ components.html(js_code, height=0, width=0)
 # ==========================================
 # 3. 初期設定とセッション管理
 # ==========================================
-DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI, 音街ウナ"
-DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
-
-if "first_visit" not in st.session_state: st.session_state.first_visit = True
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
-if "hide_warning_forever" not in st.session_state: st.session_state.hide_warning_forever = False
+if "sys_language" not in st.session_state: st.session_state.sys_language = "日本語"
 
 def get_default_preset():
     return {
@@ -265,7 +263,7 @@ if "token" in query_params:
     st.stop()
 
 # ==========================================
-# 4. ヘッダー
+# 4. ヘッダー（翻訳・寄付・アカウント）
 # ==========================================
 col_title, col_trans, col_auth = st.columns([5, 3, 2])
 with col_title:
@@ -281,7 +279,6 @@ with col_auth:
         if st.session_state.logged_in_user:
             st.success(f"👤 {st.session_state.logged_in_user}")
             
-            # 独立した通知言語設定
             c = conn.cursor()
             c.execute("SELECT language FROM users WHERE username=?", (st.session_state.logged_in_user,))
             row = c.fetchone()
@@ -343,11 +340,10 @@ with col_auth:
                         if user_info:
                             st.session_state.logged_in_user = u_name
                             
-                            # ログイン通知メール送信チェック
                             c = conn.cursor()
                             c.execute("SELECT email, login_notify FROM users WHERE username=?", (u_name,))
                             u_data = c.fetchone()
-                            if u_data and u_data[0] and u_data[1]:  # emailが存在し、login_notifyがTrueの場合
+                            if u_data and u_data[0] and u_data[1]: 
                                 send_login_notify_email(u_data[0], u_name)
                                 
                             try:
