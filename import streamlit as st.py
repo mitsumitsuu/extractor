@@ -22,15 +22,29 @@ import datetime
 # 0. メール送信設定
 # ==========================================
 SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
-SENDER_PASSWORD = "eyic edzf kved ewjg"
+# smtplibのエラーを防ぐため、スペースを除外して結合
+SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
 
 # ==========================================
-# 1. データベース初期化
+# 1. データベース初期化 (互換性エラー自動修復機能付き)
 # ==========================================
 def init_db():
     conn = sqlite3.connect('app_data.db', check_same_thread=False)
     c = conn.cursor()
-    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT, email TEXT, language TEXT)''')
+    # ユーザーテーブル作成
+    c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
+    
+    # 【自動修復】古いDBにemailとlanguage列がなければ追加する
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN email TEXT")
+    except sqlite3.OperationalError:
+        pass # 既に存在する場合は無視
+        
+    try:
+        c.execute("ALTER TABLE users ADD COLUMN language TEXT")
+    except sqlite3.OperationalError:
+        pass # 既に存在する場合は無視
+
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
@@ -76,8 +90,11 @@ def reset_password(token, new_password):
 
 def send_reset_email(email, username, token, language, gemini_key):
     if not SENDER_EMAIL or "your_email" in SENDER_EMAIL: return False
+    
+    # ※Streamlit Cloud等にデプロイしている場合は、ここのURLをご自身の公開URLに変更してください
     reset_link = f"https://your-app-url.com/?token={token}"
     base_text = f"パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。\n\nユーザー名: {username}\nリセットリンク: {reset_link}\n\n※このリンクは1時間有効です。"
+    
     if gemini_key and language != "日本語":
         try:
             genai.configure(api_key=gemini_key)
@@ -266,7 +283,7 @@ with col_auth:
                         if send_reset_email(reset_email, reset_user, token, user_data[0], reset_gemini):
                             st.success("再設定リンクを送信しました。")
                         else:
-                            st.error("メール送信設定がサーバー側にありません。管理者に連絡してください。")
+                            st.error("メール送信に失敗しました。")
                     else:
                         st.error("ユーザー名かメールアドレスが違います。")
             else:
@@ -473,14 +490,14 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
             body_input = st.text_area("内容", height=100)
             if st.form_submit_button("管理者に送信"):
                 try: requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
-                except: pass
+                except Exception: pass
 
 st.session_state.first_visit = False
 
 # ==========================================
 # 7. プリセットタブ
 # ==========================================
-preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)] + ["📁 プレイリスト作成＆照合"])
+preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)])
 
 def trigger_reset_preset(pid):
     st.session_state.presets[pid] = get_default_preset()
@@ -723,28 +740,3 @@ for i in range(10):
             
             total_height = (len(saved_df) * 35) + 40
             st.dataframe(saved_df, height=total_height, use_container_width=True)
-
-with preset_tabs[10]:
-    st.header("📁 プレイリスト作成 ＆ URL結合")
-    uploaded_pl_file = st.file_uploader("URLが含まれた楽曲リスト (Excel/CSV) をアップロード", type=["xlsx", "csv"])
-    if st.button("プレイリストURLを生成する", type="primary"):
-        if uploaded_pl_file is not None:
-            try:
-                pl_df = pd.read_csv(uploaded_pl_file) if uploaded_pl_file.name.endswith('.csv') else pd.read_excel(uploaded_pl_file)
-                video_ids = []
-                for idx, row in pl_df.iterrows():
-                    for item in row.values:
-                        match = re.search(r"(?:v=|youtu\.be/|shorts/|live/|embed/)([a-zA-Z0-9_-]{11})", str(item))
-                        if match: video_ids.append(match.group(1)); break
-                if video_ids:
-                    chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
-                    for idx, chunk in enumerate(chunked_ids):
-                        playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
-                        st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
-                        st.code(playlist_url)
-                else:
-                    st.error("有効なYouTube動画リンクが見つかりませんでした。")
-            except Exception as e:
-                st.error(f"ファイル読み込みエラー: {e}")
-        else:
-            st.warning("ファイルをアップロードしてください。")
