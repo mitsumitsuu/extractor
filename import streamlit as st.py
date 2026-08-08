@@ -23,9 +23,8 @@ import datetime
 # ==========================================
 SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
-APP_URL = "https://tyusyutusann.streamlit.app"
+APP_URL = "[https://tyusyutusann.streamlit.app](https://tyusyutusann.streamlit.app)"
 
-# マジカルミライ歴代楽曲マスターリスト
 MAGICAL_MIRAI_SONGS = [
     "Sweet Devil", "二次元ドリームフィーバー", "キャットフード", "からくりピエロ", "ありふれたせかいせいふく", "どうぶつ占い", "深海少女", "Hello, Worker", "erase or zero", "ピアノ×フォルテ×スキャンダル", "スキキライ", "shake it!", "Last Night, Good Night", "Leia", "東京テディベア", "アンハッピーリフレイン", "glow", "Tell Your World", "39", "ODDS&ENDS", "ゆめゆめ", "Weekender Girl", "FREELY TOMORROW", "1/6-out of the gravity-", "カゲロウデイズ", "心臓デモクラシー", "アカツキアライヴァル", "ワンダーランドと羊の歌", "EARTH DAY", "ラズベリー*モンスター", "初めまして地球人さん", "独りんぼエンヴィー", "恋愛裁判", "聖槍爆裂ボーイ", "ロストワンの号哭", "リモコン", "Nostalogic", "スノーマン", "エンヴィキャットウォーク", "ロミオとシンデレラ", "愛Dee", "Just Be Friends", "Packaged", "ワールドイズマイン", "Hand in Hand", "ハジメテノオト", "39みゅーじっく！", "ゴーストルール", "ヒビカセ", "Strangers", "すろぉもぉしょん", "タイムマシン", "どりーみんチュチュ", "ドクター=ファンクビート", "Calc.", "ウミユリ海底譚", "テレカクシ思春期", "スイートマジック", "Baby Maniacs -Eight Mix-", "ray", "Satisfaction", "なりすましゲンガー", "みんなみくみくにしてあげる♪", "ストリーミングハート", "エイリアンエイリアン", "Singularity", "ツギハギスタッカート", "脱法ロック", "忘却心中", "Birthday", "サイハテ", "メランコリック", "右肩の蝶", "ダブルラリアット", "Nyanyanyanyanyanyanya!", "気まぐれメルシィ", "TODAY THE FUTURE", "メルト", "砂の惑星", "DECORATOR", "えれくとりっく・えんじぇう", "Fire◎Flower", "ココロ", "いーあるふぁんくらぶ", "ルカルカ★ナイトフィーバー", "千本桜", "孤独の果て", "ビバハピ", "METEOR", "アンノウン・マザーグース", "magnet", "あったかいと", "on the rocks", "No Logic", "ドリームレス・ドリームス", "劣等上等", "ロキ", "ジェミニ", "8HIT", "WAAAA!", "リバースユニバース", "グリーンライツ・セレナーデ", "愛言葉", "テオ", "すきなことだけでいいです", "愛の詩", "快晴", "深海シティアンダーグラウンド", "メインキャラクター", "キレキャリオン", "ある計画は今も密かに", "ラムネイドブルーの憧憬", "Never Die", "星屑ユートピア", "それがあなたの幸せとしても", "Jump for Joy", "大江戸ジュリアナイト", "ぶれないアイで", "ヒバナ", "僕が夢を捨てて大人になるまで", "ブレス・ユア・ブレス", "裏表ラバーズ", "Catch the Wave", "ワールズエンド・ダンスホール", "ローリンガール", "太陽系デスコ", "ハイパーリアリティショウ", "YY", "シャボン", "Gimme×Gimme", "みかぼし", "まるいうなばら", "Amazing Dolce", "きみとぼくのレゾナンス", "完全性コンプレックス", "秘密警察", "初音ミクの劇唱", "キミペディア", "セカイ", "命に嫌われている。", "愛されなくても君がいる", "Change me", "え？あぁ、そう。", "ぽかぽかの星", "アルビノ -revive-", "ダーリンダンス", "脳内革命ガール", "テレキャスタービーボーイ", "テルミーアンサー", "Parades", "恋色病棟", "星空クロノグラフ", "First Note", "サンドリヨン", "レイニースノードロップ", "二息歩行", "インタビュア", "初音天地開闢神話", "千年の独奏歌", "Pane dhiria", "ネクストネスト", "ヴァンパイア", "おこちゃま戦争", "私の恋はヘルファイア", "FLASH", "#心がどっか寂しいんだ", "天才ロック", "Someday'z Coming", "Loading Memories", "フューチャー・イヴ", "Blessing", "すーぱーぬこになれんかった", "歌に形はないけれど", "星のカケラ", "Snowmix♪", "カルチャ", "神っぽいな", "GEDO", "ヘッジホッグ", "レッドラインマーカー", "king妃jack躍", "抜錨", "敗走", "drop pop candy", "フェレス", "ブループラネット", "Birthday Song for ミク", "HERO", "初音ミクの消失", "いいねってYEAH!", "ブリキノダンス", "混沌ブギ", "SUPERHERO", "Call!!", "TYQOON", "REALITY", "新人類", "流星のパルス", "踊", "lost and found", "letter song", "陽だまりのセツナ", "ノヴァ", "初めての恋が終わる時", "アンテナ39", "ボルテッカー", "ヒアソビ", "こちら、幸福安心委員会です。", "MAGA MAGA", "ラヴィ", "少女A", "ヴァニッシュ", "げんてん", "夜舞うシルエット", "Flyway", "メテオ", "Starduster", "stargazeR", "黙ってロックをやれって言ってんの！", "ストリートライト", "ラストラス"
 ]
@@ -49,10 +48,24 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
     c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, email TEXT, expiry DATETIME)''')
+    
+    # --- 新規追加: 利用ログ用テーブル ---
+    c.execute('''CREATE TABLE IF NOT EXISTS usage_logs (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT, timestamp DATETIME, mode TEXT, source TEXT, count INTEGER)''')
+    
     conn.commit()
     return conn
 
 conn = init_db()
+
+def log_usage(username, mode, source, count):
+    """ユーザーの動向を密かに記録する関数"""
+    uname = username if username else "guest"
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    try:
+        conn.cursor().execute("INSERT INTO usage_logs (username, timestamp, mode, source, count) VALUES (?, ?, ?, ?, ?)", 
+                              (uname, now_str, mode, str(source)[:100], count))
+        conn.commit()
+    except: pass
 
 def validate_password(pwd):
     if len(pwd) < 8: return False, "パスワードは8文字以上にしてください。"
@@ -190,7 +203,7 @@ div[data-baseweb="tab-panel"] { animation: none !important; transition: none !im
 st.markdown(hide_streamlit_style, unsafe_allow_html=True)
 
 js_code = """
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="[https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js](https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js)"></script>
 <script>
 function googleTranslateElementInit() {
   new google.translate.TranslateElement({pageLanguage: 'ja', layout: google.translate.TranslateElement.InlineLayout.SIMPLE}, 'google_translate_element');
@@ -236,7 +249,7 @@ setInterval(() => {
     });
 }, 1000);
 </script>
-<script type="text/javascript" src="//translate.google.com/translate_a/element.js?cb=googleTranslateElementInit"></script>
+<script type="text/javascript" src="//[translate.google.com/translate_a/element.js?cb=googleTranslateElementInit](https://translate.google.com/translate_a/element.js?cb=googleTranslateElementInit)"></script>
 """
 components.html(js_code, height=0, width=0)
 
@@ -385,7 +398,7 @@ def search_youtube_by_title(title):
             info = ydl.extract_info(f"ytsearch1:{title}", download=False)
             if 'entries' in info and len(info['entries']) > 0:
                 entry = info['entries'][0]
-                return f"https://www.youtube.com/watch?v={entry.get('id')}", entry.get('title', title), entry.get('view_count', 0)
+                return f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){entry.get('id')}", entry.get('title', title), entry.get('view_count', 0)
     except: pass
     return "", title, 0
 
@@ -416,8 +429,11 @@ def extract_from_pasted_text(api_key, text_data):
     """
     try:
         response = model.generate_content(prompt)
-        res_text = re.sub(r'`{3}(json)?', '', response.text, flags=re.IGNORECASE).strip()
-        return json.loads(res_text[res_text.find('['):res_text.rfind(']')+1])
+        # JSONパースのセーフティネット強化: 正規表現で配列部分だけを確実に抽出する
+        match = re.search(r'\[.*\]', response.text, re.DOTALL)
+        if match:
+            return json.loads(match.group(0))
+        return []
     except: return []
 
 def clean_title(raw_title):
@@ -452,42 +468,66 @@ def extract_vocals_ai(api_key, text_data):
     """
     try:
         response = model.generate_content(prompt)
-        res_text = re.sub(r'`{3}(json)?', '', response.text, flags=re.IGNORECASE).strip()
-        start = res_text.find('{')
-        end = res_text.rfind('}')
-        if start != -1 and end != -1: res_text = res_text[start:end+1]
-        result = json.loads(res_text)
-        return result.get("title", ""), result.get("vocals", "")
+        # JSONパースのセーフティネット強化: 正規表現で辞書部分だけを確実に抽出する
+        match = re.search(r'\{.*\}', response.text, re.DOTALL)
+        if match:
+            result = json.loads(match.group(0))
+            return result.get("title", ""), result.get("vocals", "")
+        return "", ""
     except Exception:
         return "", ""
 
 def get_youtube_playlist_api(api_key, url, min_v, max_v, min_c, max_c):
+    """プレイリストと1曲のみのURL両方に対応したAPI抽出"""
     if not api_key: raise ValueError("YouTube APIキーが設定されていません。")
-    match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
-    if not match: raise ValueError("有効なYouTubeプレイリストIDが見つかりません。")
     youtube = build("youtube", "v3", developerKey=api_key)
-    videos, next_page_token = [], None
-    while True:
-        request = youtube.playlistItems().list(part="snippet", playlistId=match.group(1), maxResults=50, pageToken=next_page_token)
+    videos = []
+    
+    playlist_match = re.search(r"list=([a-zA-Z0-9_-]+)", url)
+    single_match = re.search(r"(?:v=|youtu\.be/|shorts/)([a-zA-Z0-9_-]{11})", url)
+    
+    if playlist_match:
+        next_page_token = None
+        while True:
+            request = youtube.playlistItems().list(part="snippet", playlistId=playlist_match.group(1), maxResults=50, pageToken=next_page_token)
+            response = request.execute()
+            video_ids = [item["snippet"]["resourceId"]["videoId"] for item in response.get("items", []) if item["snippet"]["title"] not in ["Private video", "Deleted video"]]
+            if not video_ids: break
+            stats_req = youtube.videos().list(part="statistics", id=",".join(video_ids))
+            stats_dict = {i["id"]: i["statistics"] for i in stats_req.execute().get("items", [])}
+            for item in response.get("items", []):
+                vid = item["snippet"]["resourceId"]["videoId"]
+                title = item["snippet"]["title"]
+                if title in ["Private video", "Deleted video"]: continue
+                stats = stats_dict.get(vid, {})
+                views = int(stats.get("viewCount", 0))
+                comments = int(stats.get("commentCount", 0))
+                if min_v > 0 and views < min_v: continue
+                if max_v > 0 and views > max_v: continue
+                if min_c > 0 and comments < min_c: continue
+                if max_c > 0 and comments > max_c: continue
+                videos.append({"曲名": title, "概要欄データ": item["snippet"].get("description", ""), "URL": f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){vid}"})
+            next_page_token = response.get("nextPageToken")
+            if not next_page_token: break
+            
+    elif single_match:
+        # 1曲だけのURLが入力された場合のエラー回避処理
+        video_id = single_match.group(1)
+        request = youtube.videos().list(part="snippet,statistics", id=video_id)
         response = request.execute()
-        video_ids = [item["snippet"]["resourceId"]["videoId"] for item in response.get("items", []) if item["snippet"]["title"] not in ["Private video", "Deleted video"]]
-        if not video_ids: break
-        stats_req = youtube.videos().list(part="statistics", id=",".join(video_ids))
-        stats_dict = {i["id"]: i["statistics"] for i in stats_req.execute().get("items", [])}
         for item in response.get("items", []):
-            vid = item["snippet"]["resourceId"]["videoId"]
             title = item["snippet"]["title"]
-            if title in ["Private video", "Deleted video"]: continue
-            stats = stats_dict.get(vid, {})
+            stats = item.get("statistics", {})
             views = int(stats.get("viewCount", 0))
             comments = int(stats.get("commentCount", 0))
             if min_v > 0 and views < min_v: continue
             if max_v > 0 and views > max_v: continue
             if min_c > 0 and comments < min_c: continue
             if max_c > 0 and comments > max_c: continue
-            videos.append({"曲名": title, "概要欄データ": item["snippet"].get("description", ""), "URL": f"https://www.youtube.com/watch?v={vid}"})
-        next_page_token = response.get("nextPageToken")
-        if not next_page_token: break
+            videos.append({"曲名": title, "概要欄データ": item["snippet"].get("description", ""), "URL": f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){video_id}"})
+    else:
+        raise ValueError("有効なYouTubeのURLが見つかりません。")
+        
     return videos
 
 def get_playlist_ytdlp(url):
@@ -498,7 +538,7 @@ def get_playlist_ytdlp(url):
             videos = []
             for entry in info.get('entries', [info]):
                 if entry and (entry.get('url') or entry.get('id')):
-                    vid_url = entry.get('url') or f"https://www.youtube.com/watch?v={entry.get('id')}"
+                    vid_url = entry.get('url') or f"[https://www.youtube.com/watch?v=](https://www.youtube.com/watch?v=){entry.get('id')}"
                     videos.append({"曲名": entry.get('title', 'Unknown'), "概要欄データ": entry.get('description', ''), "URL": vid_url})
             return videos
     except Exception as e:
@@ -513,12 +553,10 @@ def create_advanced_excel(df, match_titles=None, enable_mm=False):
     with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, sheet_name='一括データ', index=False)
         
-        # 外部ファイル一致シート
         if match_titles and len(match_titles) > 0:
             match_df = df[df['曲名'].apply(lambda x: any(clean_title(x) in m or m in clean_title(x) for m in match_titles))]
             if not match_df.empty: match_df.to_excel(writer, sheet_name='📂 外部ファイル一致曲', index=False)
             
-        # マジカルミライ一致シート
         if enable_mm:
             mm_df = df[df['曲名'].apply(lambda x: any(clean_title(x) == mm or mm in clean_title(x) for mm in MAGICAL_MIRAI_SONGS))]
             if not mm_df.empty: mm_df.to_excel(writer, sheet_name='🎪 マジカルミライ披露曲', index=False)
@@ -571,6 +609,9 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
         **【🔑 APIキーの取得方法】**
         *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」から作成。
         *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) ➔ 「Get API key」をクリック ➔ 作成。
+        
+        **【新機能: コピペ解析 (AI) & 外部照合】**
+        * Billboard等の文字を貼り付けてAIに抽出させたり、お手持ちのファイル(CSV/Excel/PDF)と抽出結果を自動で照らし合わせて専用シートを作る機能が追加されました。
         """, unsafe_allow_html=True)
     with col_contact:
         with st.form("contact_form_top", clear_on_submit=True):
@@ -581,7 +622,7 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
             if submitted:
                 if subject_input and body_input:
                     try:
-                        res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
+                        res = requests.post("[https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com](https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com)", data={"件名": subject_input, "メッセージ": body_input})
                         if res.status_code == 200: st.success("✅ 送信が完了しました！管理者へ無事に届きました。")
                         else: st.error("送信に失敗しました。")
                     except: st.error("通信エラーが発生しました。")
@@ -630,16 +671,16 @@ for i in range(10):
 
         st.markdown("### 🔍 解析元データの選択")
         data_source = st.radio("どの方法でデータを集めますか？", 
-            ["🔗 YouTube/SoundCloudのURLから抽出", "📝 ランキングテキスト等をコピペしてAIに探させる", "📂 CSV/ExcelファイルをアップロードしてURLを補完する"],
+            ["🔗 YouTube/SoundCloudのURLから抽出", "📝 ランキングテキスト等をコピペしてAIに探させる", "📂 CSV/Excel/PDFをアップロードしてURLを補完する"],
             key=f"ds_{pid}"
         )
         
         if "URLから抽出" in data_source:
-            p["url"] = st.text_area("🔗 URLを入力", value=p["url"], height=68, key=f"url_{pid}")
+            p["url"] = st.text_area("🔗 URLを入力 (1曲のみのURLも対応)", value=p["url"], height=68, key=f"url_{pid}")
         elif "コピペ" in data_source:
             p["pasted_text"] = st.text_area("📋 BillboardやX(Twitter)のランキングテキストをそのまま貼り付け", height=150, key=f"paste_{pid}")
         else:
-            p["upload_file"] = st.file_uploader("📂 楽曲名の入ったファイルをアップロード", type=["csv", "xlsx"], key=f"up_{pid}")
+            p["upload_file"] = st.file_uploader("📂 楽曲名の入ったファイルをアップロード", type=["csv", "xlsx", "pdf"], key=f"up_{pid}")
 
         st.markdown("---")
         with st.expander("⚙️ 抽出条件・詳細フィルター", expanded=True):
@@ -729,6 +770,7 @@ for i in range(10):
                                         clean_t = clean_title(raw_t) if "スッキリ" in p["title_mode"] else raw_t
                                         vocals = extract_vocals_manual(raw_t, desc, kw_list, ng_list)
                                     
+                                    if match_file and clean_t not in match_titles: continue
                                     if tv_list and not any(tv in vocals for tv in tv_list): continue
                                     if p["multi_only"] and "/" not in vocals: continue
                                     
@@ -736,9 +778,9 @@ for i in range(10):
                                     encoded = urllib.parse.quote(safe_t)
                                     
                                     row = {"曲名": clean_t, "合成音声": vocals, "URL": make_hyperlink(url, url)}
-                                    if p["add_lyrics"]: row["歌詞検索"] = make_hyperlink(f"https://www.uta-net.com/search/?keyword={encoded}", "Uta-Netで歌詞を見る")
-                                    if p["add_analysis"]: row["初音ミクwiki検索"] = make_hyperlink(f"https://w.atwiki.jp/hmiku/search?andor=and&keyword={encoded}", "初音ミクwikiで見る")
-                                    if p["add_bpm"]: row["BPM・キー検索"] = make_hyperlink(f"https://tunebat.com/Search?q={encoded}", "Tunebatで検索")
+                                    if p["add_lyrics"]: row["歌詞検索"] = make_hyperlink(f"[https://www.uta-net.com/search/?keyword=](https://www.uta-net.com/search/?keyword=){encoded}", "Uta-Netで歌詞を見る")
+                                    if p["add_analysis"]: row["初音ミクwiki検索"] = make_hyperlink(f"[https://w.atwiki.jp/hmiku/search?andor=and&keyword=](https://w.atwiki.jp/hmiku/search?andor=and&keyword=){encoded}", "初音ミクwikiで見る")
+                                    if p["add_bpm"]: row["BPM・キー検索"] = make_hyperlink(f"[https://tunebat.com/Search?q=](https://tunebat.com/Search?q=){encoded}", "Tunebatで検索")
                                         
                                     results.append(row)
                                     
@@ -757,6 +799,8 @@ for i in range(10):
                             if results:
                                 st.session_state.results[pid] = pd.DataFrame(results)
                                 if st.session_state.logged_in_user: save_preset_to_db(st.session_state.logged_in_user, pid, p)
+                                # 抽出成功時に裏でログ記録
+                                log_usage(st.session_state.logged_in_user, p["mode"], p.get("url") or data_source, len(results))
                             else:
                                 st.warning("条件に一致する楽曲がありませんでした。")
                                 st.session_state.results[pid] = None
@@ -777,7 +821,7 @@ for i in range(10):
                     if video_ids:
                         chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
                         for idx, chunk in enumerate(chunked_ids):
-                            playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
+                            playlist_url = f"[https://www.youtube.com/watch_videos?video_ids=](https://www.youtube.com/watch_videos?video_ids=){','.join(chunk)}"
                             st.info(f"**Part {idx+1}**: {playlist_url}")
                     else: st.error("有効なリンクがありません。")
 
@@ -848,7 +892,7 @@ with preset_tabs[10]:
                 if video_ids:
                     chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
                     for idx, chunk in enumerate(chunked_ids):
-                        playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
+                        playlist_url = f"[https://www.youtube.com/watch_videos?video_ids=](https://www.youtube.com/watch_videos?video_ids=){','.join(chunk)}"
                         st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
                         st.code(playlist_url)
                 else:
