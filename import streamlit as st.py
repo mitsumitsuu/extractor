@@ -21,8 +21,8 @@ import datetime
 # ==========================================
 # 0. メール送信設定
 # ==========================================
-SENDER_EMAIL = "your_email@gmail.com"
-SENDER_PASSWORD = "your_app_password"
+SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
+SENDER_PASSWORD = "eyic edzf kved ewjg"
 
 # ==========================================
 # 1. データベース初期化
