@@ -23,48 +23,42 @@ import datetime
 # ==========================================
 SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
-
-# ※ご自身のStreamlitアプリのURLを指定してください（末尾の / は不要です）
 APP_URL = "https://tyusyutusann.streamlit.app"
 
+# マジカルミライ歴代楽曲マスターリスト
+MAGICAL_MIRAI_SONGS = [
+    "Sweet Devil", "二次元ドリームフィーバー", "キャットフード", "からくりピエロ", "ありふれたせかいせいふく", "どうぶつ占い", "深海少女", "Hello, Worker", "erase or zero", "ピアノ×フォルテ×スキャンダル", "スキキライ", "shake it!", "Last Night, Good Night", "Leia", "東京テディベア", "アンハッピーリフレイン", "glow", "Tell Your World", "39", "ODDS&ENDS", "ゆめゆめ", "Weekender Girl", "FREELY TOMORROW", "1/6-out of the gravity-", "カゲロウデイズ", "心臓デモクラシー", "アカツキアライヴァル", "ワンダーランドと羊の歌", "EARTH DAY", "ラズベリー*モンスター", "初めまして地球人さん", "独りんぼエンヴィー", "恋愛裁判", "聖槍爆裂ボーイ", "ロストワンの号哭", "リモコン", "Nostalogic", "スノーマン", "エンヴィキャットウォーク", "ロミオとシンデレラ", "愛Dee", "Just Be Friends", "Packaged", "ワールドイズマイン", "Hand in Hand", "ハジメテノオト", "39みゅーじっく！", "ゴーストルール", "ヒビカセ", "Strangers", "すろぉもぉしょん", "タイムマシン", "どりーみんチュチュ", "ドクター=ファンクビート", "Calc.", "ウミユリ海底譚", "テレカクシ思春期", "スイートマジック", "Baby Maniacs -Eight Mix-", "ray", "Satisfaction", "なりすましゲンガー", "みんなみくみくにしてあげる♪", "ストリーミングハート", "エイリアンエイリアン", "Singularity", "ツギハギスタッカート", "脱法ロック", "忘却心中", "Birthday", "サイハテ", "メランコリック", "右肩の蝶", "ダブルラリアット", "Nyanyanyanyanyanyanya!", "気まぐれメルシィ", "TODAY THE FUTURE", "メルト", "砂の惑星", "DECORATOR", "えれくとりっく・えんじぇう", "Fire◎Flower", "ココロ", "いーあるふぁんくらぶ", "ルカルカ★ナイトフィーバー", "千本桜", "孤独の果て", "ビバハピ", "METEOR", "アンノウン・マザーグース", "magnet", "あったかいと", "on the rocks", "No Logic", "ドリームレス・ドリームス", "劣等上等", "ロキ", "ジェミニ", "8HIT", "WAAAA!", "リバースユニバース", "グリーンライツ・セレナーデ", "愛言葉", "テオ", "すきなことだけでいいです", "愛の詩", "快晴", "深海シティアンダーグラウンド", "メインキャラクター", "キレキャリオン", "ある計画は今も密かに", "ラムネイドブルーの憧憬", "Never Die", "星屑ユートピア", "それがあなたの幸せとしても", "Jump for Joy", "大江戸ジュリアナイト", "ぶれないアイで", "ヒバナ", "僕が夢を捨てて大人になるまで", "ブレス・ユア・ブレス", "裏表ラバーズ", "Catch the Wave", "ワールズエンド・ダンスホール", "ローリンガール", "太陽系デスコ", "ハイパーリアリティショウ", "YY", "シャボン", "Gimme×Gimme", "みかぼし", "まるいうなばら", "Amazing Dolce", "きみとぼくのレゾナンス", "完全性コンプレックス", "秘密警察", "初音ミクの劇唱", "キミペディア", "セカイ", "命に嫌われている。", "愛されなくても君がいる", "Change me", "え？あぁ、そう。", "ぽかぽかの星", "アルビノ -revive-", "ダーリンダンス", "脳内革命ガール", "テレキャスタービーボーイ", "テルミーアンサー", "Parades", "恋色病棟", "星空クロノグラフ", "First Note", "サンドリヨン", "レイニースノードロップ", "二息歩行", "インタビュア", "初音天地開闢神話", "千年の独奏歌", "Pane dhiria", "ネクストネスト", "ヴァンパイア", "おこちゃま戦争", "私の恋はヘルファイア", "FLASH", "#心がどっか寂しいんだ", "天才ロック", "Someday'z Coming", "Loading Memories", "フューチャー・イヴ", "Blessing", "すーぱーぬこになれんかった", "歌に形はないけれど", "星のカケラ", "Snowmix♪", "カルチャ", "神っぽいな", "GEDO", "ヘッジホッグ", "レッドラインマーカー", "king妃jack躍", "抜錨", "敗走", "drop pop candy", "フェレス", "ブループラネット", "Birthday Song for ミク", "HERO", "初音ミクの消失", "いいねってYEAH!", "ブリキノダンス", "混沌ブギ", "SUPERHERO", "Call!!", "TYQOON", "REALITY", "新人類", "流星のパルス", "踊", "lost and found", "letter song", "陽だまりのセツナ", "ノヴァ", "初めての恋が終わる時", "アンテナ39", "ボルテッカー", "ヒアソビ", "こちら、幸福安心委員会です。", "MAGA MAGA", "ラヴィ", "少女A", "ヴァニッシュ", "げんてん", "夜舞うシルエット", "Flyway", "メテオ", "Starduster", "stargazeR", "黙ってロックをやれって言ってんの！", "ストリートライト", "ラストラス"
+]
+
 # ==========================================
-# 1. データベース初期化 (完全自動修復付き)
+# 1. データベース初期化
 # ==========================================
 def init_db():
     conn = sqlite3.connect('app_data.db', check_same_thread=False)
     c = conn.cursor()
     c.execute('''CREATE TABLE IF NOT EXISTS users (username TEXT PRIMARY KEY, password TEXT)''')
     try: c.execute("ALTER TABLE users ADD COLUMN email TEXT")
-    except sqlite3.OperationalError: pass
+    except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN language TEXT")
-    except sqlite3.OperationalError: pass
+    except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN login_notify BOOLEAN DEFAULT 1")
-    except sqlite3.OperationalError: pass
+    except: pass
     try: c.execute("ALTER TABLE users ADD COLUMN update_notify BOOLEAN DEFAULT 1")
-    except sqlite3.OperationalError: pass
+    except: pass
 
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
-    
-    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
-    try: c.execute("ALTER TABLE password_resets ADD COLUMN email TEXT")
-    except sqlite3.OperationalError: pass
-
+    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, email TEXT, expiry DATETIME)''')
     conn.commit()
     return conn
 
 conn = init_db()
 
-# --- パスワード強度判定関数 ---
 def validate_password(pwd):
-    if len(pwd) < 8:
-        return False, "パスワードは8文字以上にしてください。"
-    if not re.search(r'[A-Z]', pwd):
-        return False, "大文字の英字(A-Z)を1文字以上含めてください。"
-    if not re.search(r'[a-z]', pwd):
-        return False, "小文字の英字(a-z)を1文字以上含めてください。"
-    if not re.search(r'\d', pwd):
-        return False, "数字(0-9)を1文字以上含めてください。"
+    if len(pwd) < 8: return False, "パスワードは8文字以上にしてください。"
+    if not re.search(r'[A-Z]', pwd): return False, "大文字の英字(A-Z)を1文字以上含めてください。"
+    if not re.search(r'[a-z]', pwd): return False, "小文字の英字(a-z)を1文字以上含めてください。"
+    if not re.search(r'\d', pwd): return False, "数字(0-9)を1文字以上含めてください。"
     return True, ""
 
 def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
@@ -88,7 +82,7 @@ def update_user_language(username, language):
     conn.cursor().execute("UPDATE users SET language=? WHERE username=?", (language, username))
     conn.commit()
 
-# --- メール送信処理関数 ---
+# --- メール送信処理 ---
 def send_email_base(to_email, subject, body):
     if not SENDER_EMAIL or "your_email" in SENDER_EMAIL: return False
     msg = MIMEText(body, 'plain', 'utf-8')
@@ -125,7 +119,7 @@ def send_login_notify_email(email, username):
 
 def create_reset_token(email):
     token = str(uuid.uuid4())
-    expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
+    expiry = datetime.datetime.now() + datetime.timedelta(minutes=5)
     conn.cursor().execute("INSERT INTO password_resets (token, email, expiry) VALUES (?, ?, ?)", (token, email, expiry))
     conn.commit()
     return token
@@ -152,11 +146,10 @@ We received a request to reset your password. Click the link below to set a new 
 【Reset Link / 再設定リンク】
 {reset_link}
 
-※このリンクは1時間有効です / This link is valid for 1 hour.
+※このリンクは5分間有効です / This link is valid for 5 minutes.
 ※このメールは送信専用です / This is a send-only email."""
     return send_email_base(email, subject, body)
 
-# --- DB保存処理 ---
 def save_preset_to_db(username, preset_id, data_dict):
     conn.cursor().execute("REPLACE INTO presets (username, preset_id, data) VALUES (?, ?, ?)", (username, preset_id, json.dumps(data_dict)))
     conn.commit()
@@ -262,7 +255,7 @@ def get_default_preset():
         "mode": "⚡ 高速モード (yt-dlp使用 / API不要)", "title_mode": "✨ スッキリ出力",
         "yt_key": "", "gemini_key": "", "url": "", "exclude_words": "", "target_vocal": "", "target_producer": "",
         "multi_only": False, "min_v": 0, "max_v": 0, "min_c": 0, "max_c": 0,
-        "add_lyrics": True, "add_analysis": False, "add_bpm": True, "filename": "playlist"
+        "add_lyrics": True, "add_analysis": False, "add_bpm": True, "filename": "playlist", "match_mm": False
     }
 
 if "presets" not in st.session_state: st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
@@ -271,7 +264,8 @@ if "results" not in st.session_state: st.session_state.results = {i: None for i 
 query_params = st.query_params
 if "token" in query_params:
     st.subheader("🔐 パスワードの再設定")
-    new_pass = st.text_input("新しいパスワードを入力", type="password")
+    new_pass = st.text_input("新しいパスワードを入力", type="password", key="new_pass_reset")
+    st.caption("※パスワードの制約: 8文字以上 / 英大文字・英小文字・数字を各1つ以上含む必要があります。")
     if st.button("パスワードを更新"):
         is_valid, err_msg = validate_password(new_pass)
         if not is_valid:
@@ -327,7 +321,7 @@ with col_auth:
         else:
             log_mode = st.radio("メニュー", ["ログイン", "新規登録", "パスワード忘却"], horizontal=True)
             if log_mode == "パスワード忘却":
-                reset_email = st.text_input("登録したメールアドレス")
+                reset_email = st.text_input("登録したメールアドレス", key="reset_email_input")
                 if st.button("リセットメールを送信"):
                     c = conn.cursor()
                     c.execute("SELECT email FROM users WHERE email=?", (reset_email,))
@@ -336,46 +330,46 @@ with col_auth:
                         if send_reset_email(reset_email, token):
                             st.success("再設定リンクを送信しました。")
                         else:
-                            st.error("メール送信に失敗しました。")
+                            st.error("メール送信設定がサーバー側にありません。")
                     else:
                         st.error("そのメールアドレスは登録されていません。")
-            else:
-                u_name = st.text_input("ユーザー名")
-                u_pass = st.text_input("パスワード", type="password")
-                if log_mode == "新規登録":
-                    u_email = st.text_input("メールアドレス")
-                    st.markdown("📩 **通知設定**")
-                    u_login_notif = st.checkbox("メールアドレスでログイン通知を受け取る", value=True)
-                    u_update_notif = st.checkbox("運営からのサイト更新メッセージを受け取る", value=True)
-                    
-                    if st.button("登録", use_container_width=True):
-                        is_valid_pw, pw_msg = validate_password(u_pass)
-                        if not u_email:
-                            st.warning("メールアドレスを入力してください。")
-                        elif not is_valid_pw:
-                            st.warning(pw_msg)
-                        elif register_user(u_name, u_pass, u_email, u_login_notif, u_update_notif):
-                            send_registration_email(u_email)
-                            st.success("登録完了！メールをご確認の上、ログインしてください。")
-                        else: st.error("そのユーザー名は既に使用されています。")
-                else:
-                    if st.button("ログイン", use_container_width=True):
-                        user_info = login_user(u_name, u_pass)
-                        if user_info:
-                            st.session_state.logged_in_user = u_name
-                            
-                            c = conn.cursor()
-                            c.execute("SELECT email, login_notify FROM users WHERE username=?", (u_name,))
-                            u_data = c.fetchone()
-                            if u_data and u_data[0] and u_data[1]: 
-                                send_login_notify_email(u_data[0], u_name)
-                                
-                            try:
-                                loaded = load_presets_from_db(u_name)
-                                for pid, p_data in loaded.items(): st.session_state.presets[pid].update(p_data)
-                            except: pass
-                            st.rerun()
-                        else: st.error("情報が違います。")
+            elif log_mode == "新規登録":
+                u_name = st.text_input("ユーザー名", key="reg_name")
+                u_pass = st.text_input("パスワード", type="password", key="reg_pass")
+                st.caption("※パスワードの制約: 8文字以上 / 英大文字・英小文字・数字を各1つ以上含む")
+                u_email = st.text_input("メールアドレス", key="reg_email")
+                st.markdown("📩 **通知設定**")
+                u_login_notif = st.checkbox("メールアドレスでログイン通知を受け取る", value=True)
+                u_update_notif = st.checkbox("運営からのサイト更新メッセージを受け取る", value=True)
+                
+                if st.button("登録", use_container_width=True):
+                    is_valid_pw, pw_msg = validate_password(u_pass)
+                    if not u_email:
+                        st.warning("メールアドレスを入力してください。")
+                    elif not is_valid_pw:
+                        st.warning(pw_msg)
+                    elif register_user(u_name, u_pass, u_email, u_login_notif, u_update_notif):
+                        send_registration_email(u_email)
+                        st.success("登録完了！メールをご確認の上、ログインしてください。")
+                    else: st.error("そのユーザー名は既に使用されています。")
+            elif log_mode == "ログイン":
+                u_name = st.text_input("ユーザー名", key="log_name")
+                u_pass = st.text_input("パスワード", type="password", key="log_pass")
+                if st.button("ログイン", use_container_width=True):
+                    user_info = login_user(u_name, u_pass)
+                    if user_info:
+                        st.session_state.logged_in_user = u_name
+                        c = conn.cursor()
+                        c.execute("SELECT email, login_notify FROM users WHERE username=?", (u_name,))
+                        u_data = c.fetchone()
+                        if u_data and u_data[0] and u_data[1]: 
+                            send_login_notify_email(u_data[0], u_name)
+                        try:
+                            loaded = load_presets_from_db(u_name)
+                            for pid, p_data in loaded.items(): st.session_state.presets[pid].update(p_data)
+                        except: pass
+                        st.rerun()
+                    else: st.error("情報が違います。")
 
 # ==========================================
 # 5. データ処理関数
@@ -394,6 +388,22 @@ def search_youtube_by_title(title):
                 return f"https://www.youtube.com/watch?v={entry.get('id')}", entry.get('title', title), entry.get('view_count', 0)
     except: pass
     return "", title, 0
+
+def extract_text_from_file(uploaded_file):
+    text_content = ""
+    try:
+        if uploaded_file.name.endswith('.pdf'):
+            import PyPDF2
+            reader = PyPDF2.PdfReader(uploaded_file)
+            for page in reader.pages: text_content += page.extract_text() or ""
+        elif uploaded_file.name.endswith('.csv'):
+            df = pd.read_csv(uploaded_file)
+            text_content = " ".join(df.astype(str).apply(lambda x: ' '.join(x), axis=1))
+        elif uploaded_file.name.endswith(('.xls', '.xlsx')):
+            df = pd.read_excel(uploaded_file)
+            text_content = " ".join(df.astype(str).apply(lambda x: ' '.join(x), axis=1))
+    except: pass
+    return text_content
 
 def extract_from_pasted_text(api_key, text_data):
     genai.configure(api_key=api_key)
@@ -498,10 +508,21 @@ def make_hyperlink(url, text):
     formula = f'=HYPERLINK("{url}", "{text}")'
     return formula if len(formula) <= 255 else url
 
-def create_advanced_excel(df):
+def create_advanced_excel(df, match_titles=None, enable_mm=False):
     output = BytesIO()
     with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
         df.to_excel(writer, sheet_name='一括データ', index=False)
+        
+        # 外部ファイル一致シート
+        if match_titles and len(match_titles) > 0:
+            match_df = df[df['曲名'].apply(lambda x: any(clean_title(x) in m or m in clean_title(x) for m in match_titles))]
+            if not match_df.empty: match_df.to_excel(writer, sheet_name='📂 外部ファイル一致曲', index=False)
+            
+        # マジカルミライ一致シート
+        if enable_mm:
+            mm_df = df[df['曲名'].apply(lambda x: any(clean_title(x) == mm or mm in clean_title(x) for mm in MAGICAL_MIRAI_SONGS))]
+            if not mm_df.empty: mm_df.to_excel(writer, sheet_name='🎪 マジカルミライ披露曲', index=False)
+        
         if "合成音声" in df.columns:
             unique_vocals = set()
             for v in df['合成音声'].dropna():
@@ -550,9 +571,6 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
         **【🔑 APIキーの取得方法】**
         *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」から作成。
         *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) ➔ 「Get API key」をクリック ➔ 作成。
-        
-        **【新機能: コピペ解析 (AI)】**
-        BillboardやSNSのランキング文字をそのまま貼り付けて抽出開始すると、AIが曲名を認識し自動でYouTube動画を探し出してプレイリスト化します。
         """, unsafe_allow_html=True)
     with col_contact:
         with st.form("contact_form_top", clear_on_submit=True):
@@ -572,7 +590,7 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
 # ==========================================
 # 7. プリセットタブ
 # ==========================================
-preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)])
+preset_tabs = st.tabs([f"プリセット {i}" for i in range(1, 11)] + ["📁 プレイリスト作成＆照合"])
 
 def trigger_reset_preset(pid):
     st.session_state.presets[pid] = get_default_preset()
@@ -643,13 +661,15 @@ for i in range(10):
             p["target_producer"] = st.text_input("👤 このボカロPの曲だけ抽出", value=p.get("target_producer", ""), placeholder="例: DECO*27, ピノキオピー", key=f"tp_{pid}")
             p["multi_only"] = st.checkbox("👥 複数人が歌唱している曲のみ抽出する", value=p["multi_only"], key=f"mo_{pid}")
             
-            match_file = st.file_uploader("📂 外部データ照合 (ランキングやセトリCSV等をアップロードして一致する曲のみ抽出)", type=["csv", "xlsx"], key=f"mf_{pid}")
+            match_file = st.file_uploader("📂 外部データ照合 (任意のテキスト, CSV, Excel, PDFから一致曲を専用シートに切り出す)", type=["csv", "xlsx", "pdf", "txt"], key=f"mf_{pid}")
             match_titles = set()
             if match_file:
                 try:
-                    match_df = pd.read_csv(match_file) if match_file.name.endswith('.csv') else pd.read_excel(match_file)
-                    match_titles = set(match_df.astype(str).apply(lambda x: ' '.join(x), axis=1).str.cat(sep=' '))
-                except Exception: pass
+                    raw_text = extract_text_from_file(match_file)
+                    match_titles = set([clean_title(t) for t in re.split(r'[\s\n,]+', raw_text) if len(t)>1])
+                except: pass
+                
+            p["match_mm"] = st.checkbox("🎪 マジカルミライ歴代披露曲と照合し、専用シートを作成する", value=p.get("match_mm", False), key=f"mm_{pid}")
             
             cl1, cl2, cl3 = st.columns(3)
             with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク", value=p["add_lyrics"], key=f"al_{pid}")
@@ -709,7 +729,6 @@ for i in range(10):
                                         clean_t = clean_title(raw_t) if "スッキリ" in p["title_mode"] else raw_t
                                         vocals = extract_vocals_manual(raw_t, desc, kw_list, ng_list)
                                     
-                                    if match_file and clean_t not in match_titles: continue
                                     if tv_list and not any(tv in vocals for tv in tv_list): continue
                                     if p["multi_only"] and "/" not in vocals: continue
                                     
@@ -725,15 +744,13 @@ for i in range(10):
                                     
                             elif "ファイル" in data_source and p.get("upload_file"):
                                 try:
-                                    up_df = pd.read_csv(p["upload_file"]) if p["upload_file"].name.endswith('.csv') else pd.read_excel(p["upload_file"])
+                                    raw_text = extract_text_from_file(p["upload_file"])
+                                    titles = set([clean_title(t) for t in re.split(r'[\s\n,]+', raw_text) if len(t)>1])
                                     progress_bar = st.progress(0)
-                                    for idx, row in up_df.iterrows():
-                                        query = " ".join([str(v) for v in row.values if str(v) != 'nan'])
+                                    for idx, query in enumerate(titles):
                                         vid_url, yt_title, _ = search_youtube_by_title(query)
-                                        row_dict = row.to_dict()
-                                        row_dict["YouTube_URL"] = make_hyperlink(vid_url, vid_url) if vid_url else "見つかりませんでした"
-                                        results.append(row_dict)
-                                        progress_bar.progress((idx + 1) / len(up_df))
+                                        results.append({"曲名": query, "YouTube_URL": make_hyperlink(vid_url, vid_url) if vid_url else "見つかりませんでした"})
+                                        progress_bar.progress((idx + 1) / len(titles))
                                 except Exception as e:
                                     st.error(f"ファイル読み込みエラー: {e}")
 
@@ -769,7 +786,7 @@ for i in range(10):
             c_dl1, c_dl2, c_dl3 = st.columns(3)
             fname = p.get("filename", "playlist")
             with c_dl1:
-                excel_data = create_advanced_excel(saved_df)
+                excel_data = create_advanced_excel(saved_df, match_titles, p.get("match_mm", False))
                 st.download_button("📥 XLSXを保存", excel_data, f"{fname}.xlsx", key=f"dl_{pid}")
             with c_dl2:
                 csv_df = saved_df.copy()
@@ -815,3 +832,28 @@ for i in range(10):
             
             total_height = (len(saved_df) * 35) + 40
             st.dataframe(saved_df, height=total_height, use_container_width=True)
+
+with preset_tabs[10]:
+    st.header("📁 プレイリスト作成 ＆ URL結合")
+    uploaded_pl_file = st.file_uploader("URLが含まれた楽曲リスト (Excel/CSV) をアップロード", type=["xlsx", "csv"])
+    if st.button("プレイリストURLを生成する", type="primary"):
+        if uploaded_pl_file is not None:
+            try:
+                pl_df = pd.read_csv(uploaded_pl_file) if uploaded_pl_file.name.endswith('.csv') else pd.read_excel(uploaded_pl_file)
+                video_ids = []
+                for idx, row in pl_df.iterrows():
+                    for item in row.values:
+                        match = re.search(r"(?:v=|youtu\.be/|shorts/|live/|embed/)([a-zA-Z0-9_-]{11})", str(item))
+                        if match: video_ids.append(match.group(1)); break
+                if video_ids:
+                    chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
+                    for idx, chunk in enumerate(chunked_ids):
+                        playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
+                        st.markdown(f"**🎧 プレイリスト Part {idx+1} (最大50曲):**\n[ここをクリックして連続再生を開始する]({playlist_url})")
+                        st.code(playlist_url)
+                else:
+                    st.error("有効なYouTube動画リンクが見つかりませんでした。")
+            except Exception as e:
+                st.error(f"ファイル読み込みエラー: {e}")
+        else:
+            st.warning("ファイルをアップロードしてください。")
