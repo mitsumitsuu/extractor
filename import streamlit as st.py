@@ -19,10 +19,10 @@ import uuid
 import datetime
 
 # ==========================================
-# 0. メール送信設定 (ご自身の情報に変更してください)
+# 0. メール送信設定
 # ==========================================
-SENDER_EMAIL = "your_email@gmail.com" # 送信元のGmailアドレス
-SENDER_PASSWORD = "your_app_password" # Gmailのアプリパスワード（16桁）
+SENDER_EMAIL = "your_email@gmail.com"
+SENDER_PASSWORD = "your_app_password"
 
 # ==========================================
 # 1. データベース初期化
@@ -55,7 +55,6 @@ def login_user(username, password):
     c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, hash_password(password)))
     return c.fetchone()
 
-# パスワードリセット関連
 def create_reset_token(username):
     token = str(uuid.uuid4())
     expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
@@ -77,16 +76,13 @@ def reset_password(token, new_password):
 
 def send_reset_email(email, username, token, language, gemini_key):
     if not SENDER_EMAIL or "your_email" in SENDER_EMAIL: return False
-    
-    reset_link = f"https://your-app-url.com/?token={token}" # 実際のアプリURLに変更してください
+    reset_link = f"https://your-app-url.com/?token={token}"
     base_text = f"パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。\n\nユーザー名: {username}\nリセットリンク: {reset_link}\n\n※このリンクは1時間有効です。"
-    
     if gemini_key and language != "日本語":
         try:
             genai.configure(api_key=gemini_key)
             model = genai.GenerativeModel('gemini-1.5-flash')
-            translated = model.generate_content(f"Translate the following email into {language}. Keep the links intact:\n{base_text}").text
-            body = translated
+            body = model.generate_content(f"Translate the following email into {language}. Keep the links intact:\n{base_text}").text
         except: body = base_text
     else:
         body = base_text
@@ -104,8 +100,27 @@ def send_reset_email(email, username, token, language, gemini_key):
         smtp.sendmail(SENDER_EMAIL, email, msg.as_string())
         smtp.close()
         return True
-    except Exception as e:
+    except Exception:
         return False
+
+def save_preset_to_db(username, preset_id, data_dict):
+    conn.cursor().execute("REPLACE INTO presets (username, preset_id, data) VALUES (?, ?, ?)", (username, preset_id, json.dumps(data_dict)))
+    conn.commit()
+
+def load_presets_from_db(username):
+    c = conn.cursor()
+    c.execute("SELECT preset_id, data FROM presets WHERE username=?", (username,))
+    return {r[0]: json.loads(r[1]) for r in c.fetchall()}
+
+def save_setting_to_db(username, hide_warning):
+    conn.cursor().execute("REPLACE INTO settings (username, hide_warning) VALUES (?, ?)", (username, hide_warning))
+    conn.commit()
+
+def load_setting_from_db(username):
+    c = conn.cursor()
+    c.execute("SELECT hide_warning FROM settings WHERE username=?", (username,))
+    row = c.fetchone()
+    return bool(row[0]) if row else False
 
 # ==========================================
 # 2. UIカスタマイズ＆JavaScript
@@ -177,8 +192,12 @@ components.html(js_code, height=0, width=0)
 # ==========================================
 # 3. 初期設定とセッション管理
 # ==========================================
+DEFAULT_KEYWORDS = "初音ミク, 鏡音リン, 鏡音レン, 巡音ルカ, MEIKO, KAITO, 星界, 可不, 重音テト, 花隈千冬, 夏色花梨, 小春六花, GUMI, 音街ウナ"
+DEFAULT_NG_WORDS = "アルバム, クロスフェード, 配信, BOOTH, Tracklist, 参加, 収録, 歌ってみた"
+
+if "first_visit" not in st.session_state: st.session_state.first_visit = True
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
-if "sys_language" not in st.session_state: st.session_state.sys_language = "日本語"
+if "hide_warning_forever" not in st.session_state: st.session_state.hide_warning_forever = False
 
 def get_default_preset():
     return {
@@ -203,7 +222,7 @@ if "token" in query_params:
     st.stop()
 
 # ==========================================
-# 4. ヘッダー（翻訳・寄付・アカウント）
+# 4. ヘッダー
 # ==========================================
 col_title, col_trans, col_auth = st.columns([5, 3, 2])
 with col_title:
@@ -221,6 +240,13 @@ with col_auth:
             if st.button("ログアウト", use_container_width=True):
                 st.session_state.logged_in_user = None
                 st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
+                st.rerun()
+            st.markdown("---")
+            current_hide_setting = load_setting_from_db(st.session_state.logged_in_user)
+            new_hide_setting = st.checkbox("初期化時の警告を隠す", value=current_hide_setting)
+            if current_hide_setting != new_hide_setting:
+                save_setting_to_db(st.session_state.logged_in_user, new_hide_setting)
+                st.session_state.hide_warning_forever = new_hide_setting
                 st.rerun()
             if st.button("💾 全プリセットを保存", use_container_width=True):
                 for pid, p_data in st.session_state.presets.items(): save_preset_to_db(st.session_state.logged_in_user, pid, p_data)
@@ -265,9 +291,10 @@ with col_auth:
                         else: st.error("情報が違います。")
 
 # ==========================================
-# 5. データ処理関数 (AI検索機能追加)
+# 5. データ処理関数
 # ==========================================
 def parse_flexible_input(text):
+    if not text: return []
     return [w.strip() for w in re.split(r'[,\n\s、]+', text) if w.strip()]
 
 def search_youtube_by_title(title):
@@ -304,19 +331,6 @@ def clean_title(raw_title):
     title = re.sub(r"【.*?】|\[.*?\]", "", title)
     title = re.split(r"(?i)\s+feat\.\s+|\s+ft\.\s+", title)[0]
     return title.strip()
-
-def make_hyperlink(url, text):
-    formula = f'=HYPERLINK("{url}", "{text}")'
-    return formula if len(formula) <= 255 else url
-
-def create_advanced_excel(df):
-    output = BytesIO()
-    with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
-        df.to_excel(writer, sheet_name='一括データ', index=False)
-        for worksheet in writer.book.worksheets():
-            try: worksheet.autofit()
-            except: pass
-    return output.getvalue()
 
 def extract_vocals_manual(title, description, keywords, ng_list):
     found = set()
@@ -393,22 +407,66 @@ def get_playlist_ytdlp(url):
     except Exception as e:
         raise ValueError(f"解析失敗: {e}")
 
+def make_hyperlink(url, text):
+    formula = f'=HYPERLINK("{url}", "{text}")'
+    return formula if len(formula) <= 255 else url
+
+def create_advanced_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine='xlsxwriter', engine_kwargs={'options': {'strings_to_urls': False}}) as writer:
+        df.to_excel(writer, sheet_name='一括データ', index=False)
+        if "合成音声" in df.columns:
+            unique_vocals = set()
+            for v in df['合成音声'].dropna():
+                for part in str(v).split('/'):
+                    if part.strip() and part.strip() != "手動抽出モード": unique_vocals.add(part.strip())
+            for vocal in unique_vocals:
+                safe_vocal = re.sub(r'[\\/*?:\[\]]', '', vocal)[:31]
+                sub_df = df[df['合成音声'].astype(str).str.contains(vocal, na=False, regex=False)]
+                if not sub_df.empty and safe_vocal.strip():
+                    sub_df.to_excel(writer, sheet_name=safe_vocal, index=False)
+            multi_df = df[df['合成音声'].astype(str).str.contains('/', na=False)]
+            if not multi_df.empty:
+                multi_df.to_excel(writer, sheet_name='複数人歌唱', index=False)
+            vocs_order = ["初音ミク", "鏡音リン", "鏡音レン", "MEIKO", "KAITO", "GUMI", "音街ウナ", "可不", "星界", "重音テト"]
+            vocs_order += [v for v in unique_vocals if v not in vocs_order]
+            ws = writer.book.add_worksheet('ボーカル横並び配置')
+            header_fmt = writer.book.add_format({'bold': True, 'bg_color': '#D3D3D3'})
+            col_offset = 0
+            for vocal in vocs_order:
+                sub_df = df[df['合成音声'].astype(str).str.contains(vocal, na=False, regex=False)]
+                if sub_df.empty: continue
+                ws.write(0, col_offset, f"【{vocal}】", header_fmt)
+                for c_idx, col_name in enumerate(sub_df.columns): ws.write(1, col_offset + c_idx, col_name, header_fmt)
+                for r_idx, row in enumerate(sub_df.values):
+                    for c_idx, val in enumerate(row): ws.write(r_idx + 2, col_offset + c_idx, str(val))
+                col_offset += len(sub_df.columns) + 5
+        for worksheet in writer.book.worksheets():
+            try: worksheet.autofit()
+            except: pass
+    return output.getvalue()
+
 # ==========================================
-# 6. ガイド・お問い合わせ (最初から開く)
+# 6. ガイド・お問い合わせ
 # ==========================================
-if "first_visit" not in st.session_state: st.session_state.first_visit = True
-with st.expander("📖 詳しい使い方とショートカットキー / ✉️ お問い合わせ", expanded=True):
+with st.expander("📖 詳しい使い方とショートカットキー / 🔑 API取得方法 / ✉️ お問い合わせ", expanded=True):
     col_guide, col_contact = st.columns([1, 1])
     with col_guide:
         st.markdown("""
+        <div class="desktop-only">
         **【ショートカットキー (PC)】**
         *   `Ctrl`+`Shift`+`▶` : 右のプリセットへ / `Ctrl`+`Shift`+`◀` : 左へ
         *   `Ctrl`+`Shift`+`R` : 現在のプリセット初期化
         *   `Enter` : 次の入力項目へ移動
+        </div>
+        
+        **【🔑 APIキーの取得方法】**
+        *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) にアクセス ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」からAPIキーを作成。
+        *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) にアクセス ➔ 「Get API key」をクリック ➔ APIキーを作成。
         
         **【新機能: コピペ解析 (AI)】**
         BillboardやSNSのランキング文字をそのまま貼り付けて抽出開始すると、AIが曲名を認識し自動でYouTube動画を探し出してプレイリスト化します。
-        """)
+        """, unsafe_allow_html=True)
     with col_contact:
         with st.form("contact_form_top"):
             subject_input = st.text_input("件名", placeholder="バグ報告・要望")
@@ -416,6 +474,7 @@ with st.expander("📖 詳しい使い方とショートカットキー / ✉️
             if st.form_submit_button("管理者に送信"):
                 try: requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
                 except: pass
+
 st.session_state.first_visit = False
 
 # ==========================================
@@ -475,21 +534,6 @@ for i in range(10):
         st.markdown("---")
         with st.expander("⚙️ 抽出条件・詳細フィルター", expanded=True):
             p["mode"] = st.radio("抽出モード", ["⚡ 高速モード", "✨ AI完璧抽出モード (Gemini必須)"], horizontal=True, key=f"m_{pid}")
-            
-            with st.popover("🔑 各種APIキーの取得方法 (無料)"):
-                st.markdown("""
-                **【YouTube API Key の取得手順】** ※統計フィルター等を使用する場合
-                1. [Google Cloud Console](https://console.cloud.google.com/) にアクセスしてログインします。
-                2. 上部のメニューから新しいプロジェクトを作成します。
-                3. 「APIとサービス」＞「ライブラリ」を開き、「YouTube Data API v3」を検索して「有効にする」をクリックします。
-                4. 「APIとサービス」＞「認証情報」を開き、「＋ 認証情報を作成」＞「APIキー」を選択して発行された文字列をコピーします。
-
-                **【Gemini API Key の取得手順】** ※AI完璧抽出モード等を使用する場合
-                1. [Google AI Studio](https://aistudio.google.com/) にアクセスしてログインします。
-                2. 画面左側の「Get API key」をクリックします。
-                3. 「Create API key」ボタンを押し、新しいプロジェクトでキーを作成して発行された文字列をコピーします。
-                """)
-
             c1, c2 = st.columns(2)
             with c1: p["yt_key"] = st.text_input("YouTube API Key", type="password", key=f"yk_{pid}")
             with c2: p["gemini_key"] = st.text_input("Gemini API Key", type="password", key=f"gk_{pid}")
@@ -503,24 +547,24 @@ for i in range(10):
                 p["max_c"] = st.number_input("最大コメント数 (0で無制限)", value=p["max_c"], step=100, key=f"maxc_{pid}")
             
             p["exclude_words"] = st.text_input("❌ 除外ワード", value=p.get("exclude_words", ""), key=f"ex_{pid}")
-            p["target_vocal"] = st.text_input("🎯 この合成音声の曲だけ抽出", value=p.get("target_vocal", ""), placeholder="例: 初音ミク, 鏡音リン", key=f"tv_{pid}")
-            p["target_producer"] = st.text_input("👤 このボカロPの曲だけ抽出", value=p.get("target_producer", ""), placeholder="例: DECO*27", key=f"tp_{pid}")
-            p["multi_only"] = st.checkbox("👥 複数人が歌唱している曲のみ抽出", value=p.get("multi_only", False), key=f"mo_{pid}")
+            p["target_vocal"] = st.text_input("🎯 この合成音声の曲だけ抽出", value=p["target_vocal"], placeholder="例: 初音ミク, 鏡音リン", key=f"tv_{pid}")
+            p["target_producer"] = st.text_input("👤 このボカロPの曲だけ抽出", value=p.get("target_producer", ""), placeholder="例: DECO*27, ピノキオピー", key=f"tp_{pid}")
+            p["multi_only"] = st.checkbox("👥 複数人が歌唱している曲のみ抽出する", value=p["multi_only"], key=f"mo_{pid}")
             
-            match_file = st.file_uploader("📂 外部データ照合 (ランキングCSV等をアップして一致する曲のみ抽出)", type=["csv", "xlsx"], key=f"mf_{pid}")
+            match_file = st.file_uploader("📂 外部データ照合 (ランキングやセトリCSV等をアップロードして一致する曲のみ抽出)", type=["csv", "xlsx"], key=f"mf_{pid}")
             match_titles = set()
             if match_file:
                 try:
                     match_df = pd.read_csv(match_file) if match_file.name.endswith('.csv') else pd.read_excel(match_file)
                     match_titles = set(match_df.astype(str).apply(lambda x: ' '.join(x), axis=1).str.cat(sep=' '))
-                except: pass
+                except Exception: pass
             
             cl1, cl2, cl3 = st.columns(3)
             with cl1: p["add_lyrics"] = st.checkbox("📝 歌詞サイトリンク", value=p["add_lyrics"], key=f"al_{pid}")
             with cl2: p["add_analysis"] = st.checkbox("🤔 考察/Wikiリンク", value=p["add_analysis"], key=f"aa_{pid}")
             with cl3: p["add_bpm"] = st.checkbox("🎛️ Tunebat BPM/Keyリンク", value=p["add_bpm"], key=f"ab_{pid}")
             
-            p["filename"] = st.text_input("📄 出力ファイル名", value=p.get("filename", "playlist"), key=f"fn_{pid}")
+            p["filename"] = st.text_input("📄 出力ファイル名 (任意)", value=p.get("filename", "playlist"), key=f"fn_{pid}")
 
         col_exec, col_pl = st.columns([1, 1])
         with col_exec:
@@ -528,7 +572,7 @@ for i in range(10):
                 if "URLから抽出" in data_source and not p["url"].strip():
                     st.warning("URLを入力してください。")
                 else:
-                    with st.spinner(f"プリセット {pid} 実行中..."):
+                    with st.spinner(f"プリセット {pid} で解析を実行中..."):
                         try:
                             ex_list = parse_flexible_input(p["exclude_words"])
                             tv_list = parse_flexible_input(p["target_vocal"])
@@ -561,6 +605,7 @@ for i in range(10):
                                 for item in raw_data:
                                     raw_t = item["曲名"]
                                     desc = item["概要欄データ"]
+                                    url = item["URL"]
                                     
                                     if any(ex in raw_t for ex in ex_list): continue
                                     if tp_list and not any(tp in raw_t or tp in desc for tp in tp_list): continue
@@ -576,8 +621,14 @@ for i in range(10):
                                     if tv_list and not any(tv in vocals for tv in tv_list): continue
                                     if p["multi_only"] and "/" not in vocals: continue
                                     
-                                    row = {"曲名": clean_t, "合成音声": vocals, "URL": make_hyperlink(item["URL"], item["URL"])}
-                                    if p["add_lyrics"]: row["歌詞検索"] = make_hyperlink(f"https://www.uta-net.com/search/?keyword={urllib.parse.quote(str(clean_t))}", "Uta-Net")
+                                    safe_t = str(clean_t) if clean_t else "Unknown"
+                                    encoded = urllib.parse.quote(safe_t)
+                                    
+                                    row = {"曲名": clean_t, "合成音声": vocals, "URL": make_hyperlink(url, url)}
+                                    if p["add_lyrics"]: row["歌詞検索"] = make_hyperlink(f"https://www.uta-net.com/search/?keyword={encoded}", "Uta-Netで歌詞を見る")
+                                    if p["add_analysis"]: row["初音ミクwiki検索"] = make_hyperlink(f"https://w.atwiki.jp/hmiku/search?andor=and&keyword={encoded}", "初音ミクwikiで見る")
+                                    if p["add_bpm"]: row["BPM・キー検索"] = make_hyperlink(f"https://tunebat.com/Search?q={encoded}", "Tunebatで検索")
+                                        
                                     results.append(row)
                                     
                             elif "ファイル" in data_source and p.get("upload_file"):
@@ -591,13 +642,19 @@ for i in range(10):
                                         row_dict["YouTube_URL"] = make_hyperlink(vid_url, vid_url) if vid_url else "見つかりませんでした"
                                         results.append(row_dict)
                                         progress_bar.progress((idx + 1) / len(up_df))
-                                except: st.error("ファイル読み込みエラー")
+                                except Exception as e:
+                                    st.error(f"ファイル読み込みエラー: {e}")
 
                             if results:
                                 st.session_state.results[pid] = pd.DataFrame(results)
-                            else: st.warning("データが見つかりませんでした。")
-                    except Exception as e:
-                        st.error(f"エラーが発生しました: {e}")
+                                if st.session_state.logged_in_user: save_preset_to_db(st.session_state.logged_in_user, pid, p)
+                            else:
+                                st.warning("条件に一致する楽曲がありませんでした。")
+                                st.session_state.results[pid] = None
+
+                        except Exception as e:
+                            st.error(f"エラーが発生しました: {e}")
+                            st.session_state.results[pid] = None
 
         with col_pl:
             saved_df = st.session_state.results[pid]
@@ -607,10 +664,12 @@ for i in range(10):
                     for url_val in saved_df.get("URL", saved_df.get("YouTube_URL", [])):
                         match = re.search(r"(?:v=|youtu\.be/|shorts/|live/|embed/)([a-zA-Z0-9_-]{11})", str(url_val))
                         if match: video_ids.append(match.group(1))
+                    
                     if video_ids:
                         chunked_ids = [video_ids[i:i + 50] for i in range(0, len(video_ids), 50)]
                         for idx, chunk in enumerate(chunked_ids):
-                            st.info(f"**Part {idx+1}**: https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}")
+                            playlist_url = f"https://www.youtube.com/watch_videos?video_ids={','.join(chunk)}"
+                            st.info(f"**Part {idx+1}**: {playlist_url}")
                     else: st.error("有効なリンクがありません。")
 
         if saved_df is not None and not saved_df.empty:
@@ -632,22 +691,29 @@ for i in range(10):
             
             b64_csv = base64.b64encode(csv_df.to_csv(index=False, sep='\t').encode('utf-8')).decode('utf-8')
             copy_html = f"""
-            <button id="copyBtn{pid}" onclick="copyData{pid}()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 5px;">📋 表データをコピー</button>
-            <button id="imgBtn{pid}" onclick="downloadImage{pid}()" style="padding: 10px 20px; background-color: #1565c0; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 5px; margin-left: 10px;">🖼️ 画像で保存</button>
+            <button id="copyBtn{pid}" onclick="copyData{pid}()" style="padding: 10px 20px; background-color: #2e7d32; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 5px;">
+                📋 表データをクリップボードにコピー
+            </button>
+            <button id="imgBtn{pid}" onclick="downloadImage{pid}()" style="padding: 10px 20px; background-color: #1565c0; color: white; border: none; border-radius: 5px; cursor: pointer; font-weight: bold; font-size: 14px; margin-bottom: 5px; margin-left: 10px;">
+                🖼️ 表を画像(PNG)で保存
+            </button>
             <script>
             function copyData{pid}() {{
                 const btn = document.getElementById("copyBtn{pid}");
                 const str = decodeURIComponent(escape(window.atob('{b64_csv}')));
                 navigator.clipboard.writeText(str).then(function() {{
                     btn.innerHTML = "✅ コピーしました！"; btn.style.backgroundColor = "#1b5e20";
-                    setTimeout(function() {{ btn.innerHTML = "📋 表データをコピー"; btn.style.backgroundColor = "#2e7d32"; }}, 2000);
+                    setTimeout(function() {{ btn.innerHTML = "📋 表データをクリップボードにコピー"; btn.style.backgroundColor = "#2e7d32"; }}, 2000);
                 }});
             }}
             function downloadImage{pid}() {{
                 const table = window.parent.document.querySelector('div[data-testid="stDataFrame"]');
                 if(table) {{
                     html2canvas(table).then(canvas => {{
-                        const link = document.createElement('a'); link.download = '{fname}.png'; link.href = canvas.toDataURL(); link.click();
+                        const link = document.createElement('a');
+                        link.download = '{fname}.png';
+                        link.href = canvas.toDataURL();
+                        link.click();
                     }});
                 }}
             }}
