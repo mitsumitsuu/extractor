@@ -25,7 +25,7 @@ SENDER_EMAIL = "yukimitsuyamamura0315@gmail.com"
 SENDER_PASSWORD = "eyic edzf kved ewjg".replace(" ", "")
 
 # ==========================================
-# 1. データベース初期化
+# 1. データベース初期化 (カラム追加自動修復付き)
 # ==========================================
 def init_db():
     conn = sqlite3.connect('app_data.db', check_same_thread=False)
@@ -35,18 +35,27 @@ def init_db():
     except sqlite3.OperationalError: pass
     try: c.execute("ALTER TABLE users ADD COLUMN language TEXT")
     except sqlite3.OperationalError: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN login_notify BOOLEAN DEFAULT 1")
+    except sqlite3.OperationalError: pass
+    try: c.execute("ALTER TABLE users ADD COLUMN update_notify BOOLEAN DEFAULT 1")
+    except sqlite3.OperationalError: pass
+
     c.execute('''CREATE TABLE IF NOT EXISTS presets (username TEXT, preset_id INTEGER, data TEXT, PRIMARY KEY(username, preset_id))''')
     c.execute('''CREATE TABLE IF NOT EXISTS settings (username TEXT PRIMARY KEY, hide_warning BOOLEAN)''')
-    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, username TEXT, expiry DATETIME)''')
+    c.execute('''CREATE TABLE IF NOT EXISTS password_resets (token TEXT PRIMARY KEY, email TEXT, expiry DATETIME)''')
     conn.commit()
     return conn
 
 conn = init_db()
 
 def hash_password(password): return hashlib.sha256(password.encode()).hexdigest()
-def register_user(username, password, email, language):
+
+def register_user(username, password, email, login_notify, update_notify):
     try:
-        conn.cursor().execute("INSERT INTO users (username, password, email, language) VALUES (?, ?, ?, ?)", (username, hash_password(password), email, language))
+        conn.cursor().execute(
+            "INSERT INTO users (username, password, email, language, login_notify, update_notify) VALUES (?, ?, ?, ?, ?, ?)", 
+            (username, hash_password(password), email, "日本語", login_notify, update_notify)
+        )
         conn.commit()
         return True
     except sqlite3.IntegrityError: return False
@@ -56,51 +65,83 @@ def login_user(username, password):
     c.execute("SELECT * FROM users WHERE username=? AND password=?", (username, hash_password(password)))
     return c.fetchone()
 
-def create_reset_token(username):
-    token = str(uuid.uuid4())
-    expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
-    conn.cursor().execute("INSERT INTO password_resets (token, username, expiry) VALUES (?, ?, ?)", (token, username, expiry))
+def update_user_language(username, language):
+    conn.cursor().execute("UPDATE users SET language=? WHERE username=?", (language, username))
     conn.commit()
-    return token
 
-def reset_password(token, new_password):
-    c = conn.cursor()
-    c.execute("SELECT username, expiry FROM password_resets WHERE token=?", (token,))
-    row = c.fetchone()
-    if row and datetime.datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S.%f') > datetime.datetime.now():
-        username = row[0]
-        c.execute("UPDATE users SET password=? WHERE username=?", (hash_password(new_password), username))
-        c.execute("DELETE FROM password_resets WHERE token=?", (token,))
-        conn.commit()
-        return True
-    return False
-
-def send_reset_email(email, username, token, language, gemini_key):
+# --- メール送信処理関数 ---
+def send_email_base(to_email, subject, body):
     if not SENDER_EMAIL or "your_email" in SENDER_EMAIL: return False
-    reset_link = f"https://your-app-url.com/?token={token}"
-    base_text = f"パスワードの再設定リクエストを受け付けました。以下のリンクをクリックしてください。\n\nユーザー名: {username}\nリンク: {reset_link}"
-    if gemini_key and language != "日本語":
-        try:
-            genai.configure(api_key=gemini_key)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            body = model.generate_content(f"Translate into {language}:\n{base_text}").text
-        except: body = base_text
-    else: body = base_text
-
     msg = MIMEText(body, 'plain', 'utf-8')
-    msg['Subject'] = "Password Reset"
+    msg['Subject'] = subject
     msg['From'] = SENDER_EMAIL
-    msg['To'] = email
+    msg['To'] = to_email
     msg['Date'] = formatdate()
     try:
         smtp = smtplib.SMTP('smtp.gmail.com', 587)
         smtp.starttls()
         smtp.login(SENDER_EMAIL, SENDER_PASSWORD)
-        smtp.sendmail(SENDER_EMAIL, email, msg.as_string())
+        smtp.sendmail(SENDER_EMAIL, to_email, msg.as_string())
         smtp.close()
         return True
     except: return False
 
+def send_registration_email(email):
+    subject = "【楽曲抽出システム】新規登録が完了しました"
+    body = """楽曲抽出＆特定システムへようこそ！新規登録が完了しました。
+
+【簡単な使い方】
+1. YouTubeやランキング等の文字データをコピーします。
+2. アプリの専用欄にペーストして抽出ボタンを押します。
+3. AIが自動で楽曲をリスト化し、ワンクリックでプレイリストやExcelに変換します。
+
+ご要望や不具合報告がありましたら、画面右上の「お問い合わせ」からお気軽にご連絡ください。
+また、本システムは無料で提供されております。今後の開発継続のため、寄付へのご協力をお願いいたします（設定メニュー内リンクより可能です）。
+
+※このメールは送信専用です。返信は受け付けておりません。"""
+    send_email_base(email, subject, body)
+
+def send_login_notify_email(email, username):
+    subject = "【楽曲抽出システム】ログイン通知"
+    now_str = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    body = f"アカウント ({username}) への新しいログインが検出されました。\n日時: {now_str}\n\n※お心当たりがない場合は、パスワードの変更をお願いいたします。\n※このメールは送信専用です。"
+    send_email_base(email, subject, body)
+
+def create_reset_token(email):
+    token = str(uuid.uuid4())
+    expiry = datetime.datetime.now() + datetime.timedelta(hours=1)
+    conn.cursor().execute("INSERT INTO password_resets (token, email, expiry) VALUES (?, ?, ?)", (token, email, expiry))
+    conn.commit()
+    return token
+
+def reset_password(token, new_password):
+    c = conn.cursor()
+    c.execute("SELECT email, expiry FROM password_resets WHERE token=?", (token,))
+    row = c.fetchone()
+    if row and datetime.datetime.strptime(row[1], '%Y-%m-%d %H:%M:%S.%f') > datetime.datetime.now():
+        email = row[0]
+        c.execute("UPDATE users SET password=? WHERE email=?", (hash_password(new_password), email))
+        c.execute("DELETE FROM password_resets WHERE token=?", (token,))
+        conn.commit()
+        return True
+    return False
+
+def send_reset_email(email, token):
+    # APIや言語設定に依存しないスマートな多言語併記テンプレート
+    reset_link = f"https://your-app-url.com/?token={token}"
+    subject = "Password Reset Request / パスワード再設定"
+    body = f"""パスワードの再設定リクエストを受け付けました。以下のリンクをクリックして新しいパスワードを設定してください。
+We received a request to reset your password. Click the link below to set a new password.
+您已提交重置密码的请求。请点击以下链接设置新密码。
+
+【Reset Link / 再設定リンク】
+{reset_link}
+
+※このリンクは1時間有効です / This link is valid for 1 hour.
+※このメールは送信専用です / This is a send-only email."""
+    return send_email_base(email, subject, body)
+
+# --- DB保存処理 ---
 def save_preset_to_db(username, preset_id, data_dict):
     conn.cursor().execute("REPLACE INTO presets (username, preset_id, data) VALUES (?, ?, ?)", (username, preset_id, json.dumps(data_dict)))
     conn.commit()
@@ -151,7 +192,6 @@ doc.addEventListener('keydown', function(e) {
     if (e.key === 'Enter') {
         const active = doc.activeElement;
         if (active && (active.tagName === 'INPUT' || active.tagName === 'TEXTAREA')) {
-            // お問い合わせフォームでの Ctrl + Enter 送信サポート
             if (e.ctrlKey && active.closest('form')) {
                 const submitBtn = active.closest('form').querySelector('button[type="submit"]');
                 if (submitBtn) { e.preventDefault(); submitBtn.click(); return; }
@@ -202,9 +242,6 @@ if "first_visit" not in st.session_state: st.session_state.first_visit = True
 if "logged_in_user" not in st.session_state: st.session_state.logged_in_user = None
 if "hide_warning_forever" not in st.session_state: st.session_state.hide_warning_forever = False
 
-# お問い合わせフォーム用の入力値クリア制御用
-if "contact_sent" not in st.session_state: st.session_state.contact_sent = False
-
 def get_default_preset():
     return {
         "mode": "⚡ 高速モード (yt-dlp使用 / API不要)", "title_mode": "✨ スッキリ出力",
@@ -243,10 +280,18 @@ with col_auth:
         st.markdown("---")
         if st.session_state.logged_in_user:
             st.success(f"👤 {st.session_state.logged_in_user}")
-            if st.button("ログアウト", use_container_width=True):
-                st.session_state.logged_in_user = None
-                st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
-                st.rerun()
+            
+            # 独立した通知言語設定
+            c = conn.cursor()
+            c.execute("SELECT language FROM users WHERE username=?", (st.session_state.logged_in_user,))
+            row = c.fetchone()
+            current_lang = row[0] if row and row[0] else "日本語"
+            
+            new_lang = st.selectbox("システム通知言語", ["日本語", "English", "Español", "中文", "한국어"], index=["日本語", "English", "Español", "中文", "한국어"].index(current_lang))
+            if current_lang != new_lang:
+                update_user_language(st.session_state.logged_in_user, new_lang)
+                st.success("言語を更新しました。")
+
             st.markdown("---")
             current_hide_setting = load_setting_from_db(st.session_state.logged_in_user)
             new_hide_setting = st.checkbox("初期化時の警告を隠す", value=current_hide_setting)
@@ -257,38 +302,54 @@ with col_auth:
             if st.button("💾 全プリセットを保存", use_container_width=True):
                 for pid, p_data in st.session_state.presets.items(): save_preset_to_db(st.session_state.logged_in_user, pid, p_data)
                 st.success("保存完了！")
+            if st.button("ログアウト", use_container_width=True):
+                st.session_state.logged_in_user = None
+                st.session_state.presets = {i: get_default_preset() for i in range(1, 11)}
+                st.rerun()
         else:
             log_mode = st.radio("メニュー", ["ログイン", "新規登録", "パスワード忘却"], horizontal=True)
             if log_mode == "パスワード忘却":
-                reset_user = st.text_input("ユーザー名")
                 reset_email = st.text_input("登録したメールアドレス")
-                reset_gemini = st.text_input("Gemini APIキー (多言語翻訳用/任意)", type="password")
                 if st.button("リセットメールを送信"):
                     c = conn.cursor()
-                    c.execute("SELECT language FROM users WHERE username=? AND email=?", (reset_user, reset_email))
-                    user_data = c.fetchone()
-                    if user_data:
-                        token = create_reset_token(reset_user)
-                        if send_reset_email(reset_email, reset_user, token, user_data[0], reset_gemini):
+                    c.execute("SELECT email FROM users WHERE email=?", (reset_email,))
+                    if c.fetchone():
+                        token = create_reset_token(reset_email)
+                        if send_reset_email(reset_email, token):
                             st.success("再設定リンクを送信しました。")
                         else:
-                            st.error("メール送信に失敗しました。")
+                            st.error("メール送信設定がサーバー側にありません。")
                     else:
-                        st.error("ユーザー名かメールアドレスが違います。")
+                        st.error("そのメールアドレスは登録されていません。")
             else:
                 u_name = st.text_input("ユーザー名")
                 u_pass = st.text_input("パスワード", type="password")
                 if log_mode == "新規登録":
-                    u_email = st.text_input("メールアドレス (パスワード再設定用)")
-                    u_lang = st.selectbox("システム通知言語", ["日本語", "English", "Español", "中文", "한국어"])
+                    u_email = st.text_input("メールアドレス")
+                    st.markdown("📩 **通知設定**")
+                    u_login_notif = st.checkbox("メールアドレスでログイン通知を受け取る", value=True)
+                    u_update_notif = st.checkbox("運営からのサイト更新メッセージを受け取る", value=True)
+                    
                     if st.button("登録", use_container_width=True):
-                        if register_user(u_name, u_pass, u_email, u_lang): st.success("登録完了！")
-                        else: st.error("既に使用されています。")
+                        if not u_email:
+                            st.warning("メールアドレスを入力してください。")
+                        elif register_user(u_name, u_pass, u_email, u_login_notif, u_update_notif):
+                            send_registration_email(u_email)
+                            st.success("登録完了！メールをご確認の上、ログインしてください。")
+                        else: st.error("そのユーザー名は既に使用されています。")
                 else:
                     if st.button("ログイン", use_container_width=True):
                         user_info = login_user(u_name, u_pass)
                         if user_info:
                             st.session_state.logged_in_user = u_name
+                            
+                            # ログイン通知メール送信チェック
+                            c = conn.cursor()
+                            c.execute("SELECT email, login_notify FROM users WHERE username=?", (u_name,))
+                            u_data = c.fetchone()
+                            if u_data and u_data[0] and u_data[1]:  # emailが存在し、login_notifyがTrueの場合
+                                send_login_notify_email(u_data[0], u_name)
+                                
                             try:
                                 loaded = load_presets_from_db(u_name)
                                 for pid, p_data in loaded.items(): st.session_state.presets[pid].update(p_data)
@@ -453,7 +514,7 @@ def create_advanced_excel(df):
     return output.getvalue()
 
 # ==========================================
-# 6. ガイド・お問い合わせ (送信後自動クリア・成功表示対応)
+# 6. ガイド・お問い合わせ
 # ==========================================
 with st.expander("📖 詳しい使い方とショートカットキー / 🔑 API取得方法 / ✉️ お問い合わせ", expanded=True):
     col_guide, col_contact = st.columns([1, 1])
@@ -463,12 +524,15 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
         **【ショートカットキー (PC)】**
         *   `Ctrl`+`Shift`+`▶` : 右のプリセットへ / `Ctrl`+`Shift`+`◀` : 左へ
         *   `Ctrl`+`Shift`+`R` : 現在のプリセット初期化
-        *   `Enter` : 次の入力項目へ移動 (お問い合わせは `Ctrl`+`Enter` で送信可能)
+        *   `Enter` : 次の入力項目へ移動 (お問い合わせは `Ctrl`+`Enter` で送信可)
         </div>
         
         **【🔑 APIキーの取得方法】**
-        *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」からAPIキーを作成。
-        *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) ➔ 「Get API key」をクリック ➔ APIキーを作成。
+        *   **YouTube API Key:** [Google Cloud Console](https://console.cloud.google.com/) ➔ プロジェクト作成 ➔ 「APIとサービス」から「YouTube Data API v3」を有効化 ➔ 「認証情報」から作成。
+        *   **Gemini API Key:** [Google AI Studio](https://aistudio.google.com/) ➔ 「Get API key」をクリック ➔ 作成。
+        
+        **【新機能: コピペ解析 (AI)】**
+        BillboardやSNSのランキング文字をそのまま貼り付けて抽出開始すると、AIが曲名を認識し自動でYouTube動画を探し出してプレイリスト化します。
         """, unsafe_allow_html=True)
     with col_contact:
         with st.form("contact_form_top", clear_on_submit=True):
@@ -480,16 +544,10 @@ with st.expander("📖 詳しい使い方とショートカットキー / 🔑 A
                 if subject_input and body_input:
                     try:
                         res = requests.post("https://formsubmit.co/ajax/yukimitsuyamamura0315@gmail.com", data={"件名": subject_input, "メッセージ": body_input})
-                        if res.status_code == 200:
-                            st.success("✅ 送信が完了しました！管理者へ無事に届きました。")
-                        else:
-                            st.error("送信に失敗しました。")
-                    except:
-                        st.error("通信エラーが発生しました。")
-                else:
-                    st.warning("件名と内容の両方を入力してください。")
-
-st.session_state.first_visit = False
+                        if res.status_code == 200: st.success("✅ 送信が完了しました！管理者へ無事に届きました。")
+                        else: st.error("送信に失敗しました。")
+                    except: st.error("通信エラーが発生しました。")
+                else: st.warning("件名と内容の両方を入力してください。")
 
 # ==========================================
 # 7. プリセットタブ
